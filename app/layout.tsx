@@ -1,8 +1,13 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import MobileNav from "@/components/MobileNav"; // 1. IMPORT THE NEW NAV
 import { ToastProvider } from "@/components/ToastContext";
+
+export const viewport: Viewport = {
+  themeColor: "#09090b", // Matches our zinc-950 background
+  colorScheme: "dark",
+};
 
 export const metadata: Metadata = {
   title: "GradPilot",
@@ -15,7 +20,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <body className="bg-zinc-950 text-white antialiased flex"> 
         <ToastProvider>
           {/* Sidebar shows on Desktop, hides on Mobile */}

@@ -1,8 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* 1. We force the background to zinc-950 and text to white */
+  --background: #09090b;
+  --foreground: #ffffff;
+  
+  /* 2. This tells the phone's native browser elements (scrollbars, native calendars) to stay dark */
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -12,12 +16,7 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* Notice we completely deleted the @media (prefers-color-scheme: dark) block! */
 
 body {
   background: var(--background);
