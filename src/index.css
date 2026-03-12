@@ -1,0 +1,18 @@
+@import "tailwindcss";
+
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif !important;
+  background-color: #0d0d14;
+  color: #f1f5f9;
+}
+
+/* OVERRIDE THE SORA FONT WE USED EARLIER */
+.font-\[\'Sora\'\] {
+  font-family: 'Plus Jakarta Sans', sans-serif !important;
+}
+
+@layer base {
+  button {
+    @apply cursor-pointer;
+  }
+}
