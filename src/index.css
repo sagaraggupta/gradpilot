@@ -16,3 +16,22 @@ body {
     @apply cursor-pointer;
   }
 }
+/* Themes for Animations */
+@theme {
+  /* Existing border spin */
+  --animate-border-spin: border-spin 3s linear infinite;
+
+  /* Add the Slow Spin for the Chakra */
+  --animate-spin-slow: spin-slow 8s linear infinite;
+
+  @keyframes border-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  
+}

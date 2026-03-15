@@ -1,34 +1,56 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
+import { useAuth } from "../../contexts/AuthContext";
+import { runBackgroundStreakCheck } from "../../lib/streakEngine";
+import { Icon, Icons } from "../ui/Icon";
 
 export default function DashboardLayout() {
-  // This state controls whether the desktop sidebar is wide or thin
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { user } = useAuth();
+  
+  // New state to hold streak penalty/freeze alerts
+  const [streakAlert, setStreakAlert] = useState(null);
+
+  useEffect(() => {
+    if (user) {
+      // Run the engine instantly on load
+      runBackgroundStreakCheck(user.id).then(res => {
+        if (res) setStreakAlert(res);
+      });
+    }
+  }, [user]);
 
   return (
     <div className="flex h-screen bg-[#0d0d14] overflow-hidden font-sans">
+      <Sidebar isCollapsed={isCollapsed} toggleCollapse={() => setIsCollapsed(!isCollapsed)} />
       
-      {/* 1. We pass the state to the Sidebar so the toggle button works */}
-      <Sidebar 
-        isCollapsed={isCollapsed} 
-        toggleCollapse={() => setIsCollapsed(!isCollapsed)} 
-      />
-      
-      {/* 2. THE CRITICAL FIX: The dynamic margin (ml-64 or ml-20) physically pushes the screen to the right so it never overlaps! */}
-      <div 
-        className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ease-in-out w-full pt-16 md:pt-0
-          ${isCollapsed ? "md:ml-20" : "md:ml-64"}
-        `}
-      >
+      <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ease-in-out w-full pt-16 md:pt-0 ${isCollapsed ? "md:ml-20" : "md:ml-64"}`}>
         <Topbar />
         
+        {/* THE STREAK ALERT BANNER */}
+        {streakAlert && (
+          <div className={`mx-4 md:mx-8 mt-6 p-4 rounded-2xl border flex items-center justify-between shadow-lg animate-[fadeIn_0.5s_ease-out] shrink-0
+            ${streakAlert.type === 'freeze_used' ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}
+          `}>
+            <div className="flex items-center gap-4">
+              <div className="text-3xl drop-shadow-md">{streakAlert.type === 'freeze_used' ? '🧊' : '💔'}</div>
+              <div>
+                <h4 className="font-extrabold text-[15px] tracking-tight">{streakAlert.type === 'freeze_used' ? 'Streak Freeze Activated!' : 'Streak Lost'}</h4>
+                <p className="text-[13px] opacity-80 mt-0.5">{streakAlert.message}</p>
+              </div>
+            </div>
+            <button onClick={() => setStreakAlert(null)} className="p-2 hover:bg-white/10 rounded-xl transition-colors shrink-0">
+              <Icon d={Icons.x} size={18} />
+            </button>
+          </div>
+        )}
+
         <main className="flex-1 overflow-y-auto p-4 md:p-8 animate-[fadeIn_0.3s_ease]">
           <Outlet />
         </main>
       </div>
-
     </div>
   );
 }

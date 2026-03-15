@@ -1,11 +1,12 @@
 import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 // Layout & UI
 import DashboardLayout from "./components/layout/DashboardLayout";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
 
-// Auth Pages
+// Auth & Public Pages
+import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import SignUp from "./pages/SignUp";
 
@@ -18,6 +19,7 @@ import Expenses from "./pages/Expenses";
 import Grades from "./pages/Grades";
 import Analytics from "./pages/Analytics";
 import Goals from "./pages/Goals";
+import Leaderboard from "./pages/Leaderboard"; 
 import AIAssistant from "./pages/AIAssistant";
 
 const ComingSoon = () => (
@@ -31,28 +33,30 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Public Routes */}
+        {/* ─── PUBLIC ROUTES ─── */}
+        <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<SignUp />} />
 
-        {/* Protected Routes (Requires Login) */}
+        {/* ─── PROTECTED APP ROUTES ─── */}
         <Route element={<ProtectedRoute />}>
-          <Route path="/" element={<DashboardLayout />}>
-            <Route index element={<Dashboard />} />
-            
-            {/* THE CRITICAL FIX: Changed "tasks" to "assignments" to match the sidebar! */}
-            <Route path="assignments" element={<Assignments />} />
-            
-            <Route path="attendance" element={<Attendance />} />
-            <Route path="timer" element={<Timer />} />
-            <Route path="expenses" element={<Expenses />} />
-            <Route path="grades" element={<Grades />} />
-            <Route path="analytics" element={<Analytics />} />
-            <Route path="goals" element={<Goals />} />
-            <Route path="ai" element={<AIAssistant />} />
-            <Route path="*" element={<ComingSoon />} />
+          {/* Notice we removed the path here so child routes keep their exact URLs! */}
+          <Route element={<DashboardLayout />}>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/assignments" element={<Assignments />} />
+            <Route path="/attendance" element={<Attendance />} />
+            <Route path="/timer" element={<Timer />} />
+            <Route path="/expenses" element={<Expenses />} />
+            <Route path="/grades" element={<Grades />} />
+            <Route path="/analytics" element={<Analytics />} />
+            <Route path="/goals" element={<Goals />} />
+            <Route path="/leaderboard" element={<Leaderboard />} />
+            <Route path="/ai" element={<AIAssistant />} />
           </Route>
         </Route>
+
+        {/* Redirect unknown routes back to home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

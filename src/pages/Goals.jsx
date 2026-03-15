@@ -15,6 +15,15 @@ const THEME_OPTIONS = {
   gold: { name: "Executive Gold", cost: 10000, class: "hue-rotate-[160deg] saturate-50 sepia-[.3]" }
 };
 
+// ─── NEW: COSMETICS CATALOG ───
+const SHOP_FRAMES = [
+  { id: "none", name: "Standard", cost: 0, class: "", icon: "⚪" },
+  { id: "bronze", name: "Bronze Novice", cost: 500, class: "border-4 border-orange-700 shadow-[0_0_15px_rgba(194,65,12,0.5)]", icon: "🥉" },
+  { id: "gold", name: "Gold Scholar", cost: 2000, class: "border-4 border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.8)]", icon: "👑" },
+  { id: "neon", name: "Cyberpunk Glow", cost: 5000, class: "border-4 border-fuchsia-500 shadow-[0_0_25px_rgba(217,70,239,0.9)] animate-pulse", icon: "⚡" },
+  { id: "radiant", name: "Radiant Diamond", cost: 10000, class: "p-1 bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 shadow-[0_0_30px_rgba(34,211,238,0.8)] animate-[spin_3s_linear_infinite]", icon: "💎", isGradient: true }
+];
+
 export default function Goals() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -25,12 +34,15 @@ export default function Goals() {
   const [goals, setGoals] = useState([]);
   const [customRewards, setCustomRewards] = useState([]);
   const [userSettings, setUserSettings] = useState({ xp_spent: 0, active_theme: 'default', unlocked_themes: ['default'] });
+  
+  // Profile Engine (Focus Timer XP, Streaks, and new Avatar Frames)
+  const [profile, setProfile] = useState({ total_xp: 0, current_streak: 0, streak_freezes_owned: 0, longest_streak: 0, equipped_frame: 'none', owned_frames: ['none'] });
 
   // UI States
   const [isHabitModalOpen, setIsHabitModalOpen] = useState(false);
   const [isGoalModalOpen, setIsGoalModalOpen] = useState(false);
   const [isStoreOpen, setIsStoreOpen] = useState(false);
-  const [storeTab, setStoreTab] = useState("rewards"); // "rewards" | "themes"
+  const [storeTab, setStoreTab] = useState("rewards"); // "rewards" | "themes" | "frames"
   const [redeemCelebration, setRedeemCelebration] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -41,8 +53,7 @@ export default function Goals() {
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // ─── GLOBAL THEME INJECTION HACK ───
-  // This watches the user's active theme and applies a CSS filter to the entire HTML document!
+  // ─── GLOBAL THEME INJECTION ───
   useEffect(() => {
     if (userSettings?.active_theme) {
       const themeClass = THEME_OPTIONS[userSettings.active_theme]?.class || "";
@@ -57,21 +68,22 @@ export default function Goals() {
 
   const fetchData = async () => {
     setLoading(true);
-    const [ { data: hData }, { data: gData }, { data: rData }, { data: sData } ] = await Promise.all([
+    const [ { data: hData }, { data: gData }, { data: rData }, { data: sData }, { data: pData } ] = await Promise.all([
       supabase.from('habits').select('*').order('created_at', { ascending: true }),
       supabase.from('goals').select('*').order('created_at', { ascending: false }),
       supabase.from('custom_rewards').select('*').order('cost', { ascending: true }),
-      supabase.from('user_settings').select('*').eq('user_id', user.id).single()
+      supabase.from('user_settings').select('*').eq('user_id', user.id).single(),
+      supabase.from('profiles').select('*').eq('id', user.id).single() 
     ]);
     
     if (hData) setHabits(hData);
     if (gData) setGoals(gData);
     if (rData) setCustomRewards(rData);
+    if (pData) setProfile(pData);
     
     if (sData) {
       setUserSettings(sData);
     } else {
-      // Create defaults if they don't exist
       const def = { user_id: user.id, monthly_budget: 7000, xp_spent: 0, active_theme: 'default', unlocked_themes: ['default'] };
       await supabase.from('user_settings').insert([def]);
       setUserSettings(def);
@@ -90,15 +102,13 @@ export default function Goals() {
     const highestStreak = habits.length > 0 ? Math.max(...habits.map(h => h.streak)) : 0;
     const goalsCompleted = goals.filter(g => g.progress === 100).length;
 
-    // Calculate Total Earned XP
-    let totalEarnedXp = 0;
+    let totalEarnedXp = profile.total_xp || 0; 
     habits.forEach(h => totalEarnedXp += (h.streak * 50));
     goals.forEach(g => {
       if (g.progress === 100) totalEarnedXp += 500;
       else totalEarnedXp += (g.progress * 5);
     });
 
-    // The True Wallet Balance
     const currentBalance = totalEarnedXp - (userSettings?.xp_spent || 0);
 
     const badges = [
@@ -111,9 +121,9 @@ export default function Goals() {
     ];
 
     return { habitsDoneToday, highestStreak, totalEarnedXp, currentBalance, badges, badgesEarned: badges.filter(b=>b.earned).length };
-  }, [habits, goals, todayStr, userSettings]);
+  }, [habits, goals, todayStr, userSettings, profile]);
 
-  // ─── HABIT & GOAL CRUD LOGIC (Summarized for space) ───
+  // ─── HABIT & GOAL LOGIC ───
   const handleAddHabit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -168,7 +178,7 @@ export default function Goals() {
     await supabase.from('goals').delete().eq('id', id);
   };
 
-  // ─── STORE LOGIC ───
+  // ─── STORE & THEME LOGIC ───
   const handleCreateReward = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -183,43 +193,76 @@ export default function Goals() {
   };
 
   const redeemReward = async (reward) => {
-    if (gamification.currentBalance < reward.cost) {
-      alert("Not enough XP!"); return;
-    }
+    if (gamification.currentBalance < reward.cost) { alert("Not enough XP!"); return; }
     const newSpent = userSettings.xp_spent + reward.cost;
     setUserSettings(prev => ({ ...prev, xp_spent: newSpent }));
     await supabase.from('user_settings').update({ xp_spent: newSpent }).eq('user_id', user.id);
-    
-    // Massive Celebration
     setRedeemCelebration(`Enjoy: ${reward.title} ${reward.icon}`);
     setTimeout(() => setRedeemCelebration(null), 4000);
   };
 
   const handleBuyOrEquipTheme = async (themeKey, config) => {
     const isUnlocked = userSettings.unlocked_themes.includes(themeKey);
-    
     if (isUnlocked) {
-      // Equip
       setUserSettings(prev => ({ ...prev, active_theme: themeKey }));
       await supabase.from('user_settings').update({ active_theme: themeKey }).eq('user_id', user.id);
       showToast("Theme Equipped!");
     } else {
-      // Buy
       if (gamification.currentBalance < config.cost) { alert("Not enough XP!"); return; }
       const newSpent = userSettings.xp_spent + config.cost;
       const newUnlocked = [...userSettings.unlocked_themes, themeKey];
-      
       setUserSettings(prev => ({ ...prev, xp_spent: newSpent, unlocked_themes: newUnlocked, active_theme: themeKey }));
       await supabase.from('user_settings').update({ xp_spent: newSpent, unlocked_themes: newUnlocked, active_theme: themeKey }).eq('user_id', user.id);
       showToast("Theme Unlocked & Equipped!");
     }
   };
 
+  const handleBuyFreeze = async () => {
+    if (gamification.currentBalance < 500) { alert("Not enough XP!"); return; }
+    const newSpent = userSettings.xp_spent + 500;
+    const newFreezes = profile.streak_freezes_owned + 1;
+    setUserSettings(prev => ({ ...prev, xp_spent: newSpent }));
+    setProfile(prev => ({ ...prev, streak_freezes_owned: newFreezes }));
+    await Promise.all([
+      supabase.from('user_settings').update({ xp_spent: newSpent }).eq('user_id', user.id),
+      supabase.from('profiles').update({ streak_freezes_owned: newFreezes }).eq('id', user.id)
+    ]);
+    showToast("Streak Freeze equipped! 🧊");
+  };
+
+  // ─── NEW: AVATAR FRAME LOGIC ───
+  const handleBuyOrEquipFrame = async (frame) => {
+    const isUnlocked = profile.owned_frames?.includes(frame.id) || frame.id === "none";
+    
+    if (isUnlocked) {
+      setProfile(prev => ({ ...prev, equipped_frame: frame.id }));
+      await supabase.from('profiles').update({ equipped_frame: frame.id }).eq('id', user.id);
+      showToast("Frame Equipped!");
+    } else {
+      if (gamification.currentBalance < frame.cost) { alert("Not enough XP!"); return; }
+      
+      const newSpent = userSettings.xp_spent + frame.cost;
+      const newOwned = [...(profile.owned_frames || ['none']), frame.id];
+      
+      setUserSettings(prev => ({ ...prev, xp_spent: newSpent }));
+      setProfile(prev => ({ ...prev, owned_frames: newOwned, equipped_frame: frame.id }));
+      
+      await Promise.all([
+        supabase.from('user_settings').update({ xp_spent: newSpent }).eq('user_id', user.id),
+        supabase.from('profiles').update({ owned_frames: newOwned, equipped_frame: frame.id }).eq('id', user.id)
+      ]);
+      showToast("Frame Unlocked & Equipped! ✨");
+    }
+  };
+
+  const getInitials = () => {
+    const name = profile?.full_name || user?.email || "U";
+    return name.charAt(0).toUpperCase();
+  };
 
   return (
     <div className="flex flex-col gap-6 relative pb-10">
       
-      {/* ─── MASSIVE REDEEM CELEBRATION OVERLAY ─── */}
       {redeemCelebration && (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm animate-[fadeIn_0.2s_ease-out]">
           <div className="text-[100px] animate-[bounce_1s_ease-in-out_infinite]">🎉</div>
@@ -232,15 +275,11 @@ export default function Goals() {
       {/* HEADER & STORE BANNER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-br from-indigo-500/10 to-purple-500/5 border border-indigo-500/20 p-5 rounded-2xl">
         <div>
-          <h2 className="text-slate-100 font-bold text-[22px] font-['Sora']">Goals & Habits</h2>
+          <h2 className="text-slate-100 font-bold text-[22px] font-['Plus_Jakarta_Sans']">Goals & Habits</h2>
           <p className="text-indigo-300/60 text-[13px] mt-0.5">Build discipline and level up your life.</p>
         </div>
         
-        {/* Store Access Button */}
-        <button 
-          onClick={() => setIsStoreOpen(true)}
-          className="flex items-center gap-3 px-5 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-[0_0_20px_rgba(245,158,11,0.3)] hover:scale-105 transition-all w-full md:w-auto"
-        >
+        <button onClick={() => setIsStoreOpen(true)} className="flex items-center gap-3 px-5 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-[0_0_20px_rgba(245,158,11,0.3)] hover:scale-105 transition-all w-full md:w-auto">
           <div className="flex flex-col text-left mr-2">
             <span className="text-[10px] uppercase font-bold text-amber-100/70 tracking-widest leading-none">Wallet Balance</span>
             <span className="text-[16px] font-extrabold leading-none mt-1">{gamification.currentBalance.toLocaleString()} XP</span>
@@ -250,14 +289,14 @@ export default function Goals() {
       </div>
 
       {/* STAT CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Lifetime XP Earned" value={gamification.totalEarnedXp.toLocaleString()} sub="Total experience gained" icon="star" color="#fbbf24" />
-        <StatCard label="Best Streak" value={`${gamification.highestStreak} Days`} sub="Your longest active habit" icon="fire" color="#fb923c" />
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard label="Platform Streak" value={`${profile.current_streak} Days`} sub={`Best: ${profile.longest_streak} days`} icon="fire" color="#fb923c" />
+        <StatCard label="Streak Freezes" value={profile.streak_freezes_owned} sub="Equipped protections" icon="star" color="#22d3ee" />
         <StatCard label="Habits Today" value={`${gamification.habitsDoneToday}/${habits.length}`} sub="Daily completion" icon="check" color={gamification.habitsDoneToday === habits.length && habits.length > 0 ? "#4ade80" : "#818cf8"} />
         <StatCard label="Badges" value={gamification.badgesEarned} sub="Unlocked achievements" icon="trophy" color="#a855f7" />
       </div>
 
-      {/* ─── ROW 1: DAILY HABITS ─── */}
+      {/* ROW 1: DAILY HABITS */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
         <div className="flex justify-between items-center mb-5">
           <h3 className="text-slate-100 font-semibold text-[15px]">Daily Habits</h3>
@@ -296,7 +335,7 @@ export default function Goals() {
         )}
       </div>
 
-      {/* ─── ROW 2: PERSONAL GOALS ─── */}
+      {/* ROW 2: PERSONAL GOALS */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
         <div className="flex justify-between items-center mb-5">
           <h3 className="text-slate-100 font-semibold text-[15px]">Personal Goals</h3>
@@ -342,7 +381,7 @@ export default function Goals() {
         )}
       </div>
 
-      {/* ─── ROW 3: ACHIEVEMENTS ─── */}
+      {/* ROW 3: ACHIEVEMENTS */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
         <h3 className="text-slate-100 font-semibold text-[15px] mb-5">🏆 Achievements</h3>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -358,11 +397,10 @@ export default function Goals() {
         </div>
       </div>
 
-      {/* ─── THE GUILT-FREE STORE MODAL ─── */}
+      {/* ─── THE XP REWARD STORE MODAL ─── */}
       <Modal isOpen={isStoreOpen} onClose={() => setIsStoreOpen(false)} title="XP Reward Store">
         <div className="flex flex-col gap-4">
           
-          {/* Header Info */}
           <div className="bg-[#0d0d14] border border-white/10 rounded-xl p-4 flex justify-between items-center">
             <div>
               <div className="text-[11px] text-white/40 uppercase tracking-widest font-bold">Wallet Balance</div>
@@ -371,54 +409,75 @@ export default function Goals() {
             <div className="text-3xl drop-shadow-[0_0_10px_rgba(251,191,36,0.5)]">💳</div>
           </div>
 
-          {/* Store Tabs */}
-          <div className="flex gap-2 border-b border-white/10 pb-2">
-            <button onClick={() => setStoreTab("rewards")} className={`flex-1 py-2 text-[13px] font-bold rounded-t-lg transition-colors ${storeTab === "rewards" ? 'border-b-2 border-indigo-400 text-indigo-400' : 'text-white/40 hover:text-white/70'}`}>Guilt-Free Rewards</button>
-            <button onClick={() => setStoreTab("themes")} className={`flex-1 py-2 text-[13px] font-bold rounded-t-lg transition-colors ${storeTab === "themes" ? 'border-b-2 border-indigo-400 text-indigo-400' : 'text-white/40 hover:text-white/70'}`}>App Themes</button>
+          <div className="flex gap-1 border-b border-white/10 pb-2">
+            <button onClick={() => setStoreTab("rewards")} className={`flex-1 py-2 text-[12px] font-bold rounded-t-lg transition-colors ${storeTab === "rewards" ? 'border-b-2 border-indigo-400 text-indigo-400' : 'text-white/40 hover:text-white/70'}`}>Boosts</button>
+            <button onClick={() => setStoreTab("themes")} className={`flex-1 py-2 text-[12px] font-bold rounded-t-lg transition-colors ${storeTab === "themes" ? 'border-b-2 border-indigo-400 text-indigo-400' : 'text-white/40 hover:text-white/70'}`}>Themes</button>
+            <button onClick={() => setStoreTab("frames")} className={`flex-1 py-2 text-[12px] font-bold rounded-t-lg transition-colors ${storeTab === "frames" ? 'border-b-2 border-indigo-400 text-indigo-400' : 'text-white/40 hover:text-white/70'}`}>Frames</button>
           </div>
 
-          {/* TAB 1: CUSTOM REWARDS */}
+          {/* TAB 1: REWARDS & BOOSTS */}
           {storeTab === "rewards" && (
             <div className="flex flex-col gap-4 max-h-[400px] overflow-y-auto pr-2">
-              <p className="text-[12px] text-white/50">Create your own real-world rewards. When you earn enough XP, buy a ticket to enjoy your break completely guilt-free!</p>
-              
-              {/* Add New Reward Form */}
-              <form onSubmit={handleCreateReward} className="bg-white/5 border border-white/10 p-3 rounded-xl flex flex-col gap-3">
-                <div className="flex gap-2">
-                  <input required type="text" placeholder="e.g. Order Pizza 🍕" value={newReward.title} onChange={e => setNewReward({...newReward, title: e.target.value})} className="flex-1 bg-[#0d0d14] border border-white/10 rounded-lg px-3 py-2 text-[12px] text-slate-200 outline-none focus:border-indigo-500/50" />
-                  <input required type="number" min="50" step="50" placeholder="XP Cost" value={newReward.cost} onChange={e => setNewReward({...newReward, cost: e.target.value})} className="w-24 bg-[#0d0d14] border border-white/10 rounded-lg px-3 py-2 text-[12px] text-amber-400 font-bold outline-none focus:border-amber-500/50" />
+              <div>
+                <div className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2 px-1">System Upgrades</div>
+                <div className="flex justify-between items-center p-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 group">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center text-xl">🧊</div>
+                    <div>
+                      <div className="text-[13px] font-bold text-cyan-400">Streak Freeze</div>
+                      <div className="text-[10px] text-white/50 mt-0.5">Protects your streak if you miss a day. Max 2.</div>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={handleBuyFreeze} 
+                    disabled={profile.streak_freezes_owned >= 2 || gamification.currentBalance < 500}
+                    className={`px-4 py-2 rounded-lg text-[12px] font-bold transition-all shrink-0 ml-2
+                      ${profile.streak_freezes_owned >= 2 ? 'bg-white/5 text-white/30 cursor-not-allowed' : 
+                      gamification.currentBalance >= 500 ? 'bg-cyan-500 text-[#0d0d14] hover:bg-cyan-400 hover:scale-105 shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-white/5 text-white/30 cursor-not-allowed'}`}
+                  >
+                    {profile.streak_freezes_owned >= 2 ? "Max Owned" : "500 XP"}
+                  </button>
                 </div>
-                <button type="submit" disabled={isSubmitting} className="w-full py-2 bg-indigo-500/20 text-indigo-300 text-[12px] font-bold rounded-lg hover:bg-indigo-500/30 transition-colors">+ Create Custom Reward</button>
-              </form>
+              </div>
 
-              {/* List of Rewards */}
-              <div className="flex flex-col gap-2 mt-2">
-                {customRewards.length === 0 ? (
-                  <div className="text-center text-white/30 text-[12px] py-4">No rewards created yet.</div>
-                ) : (
-                  customRewards.map(reward => {
-                    const canAfford = gamification.currentBalance >= reward.cost;
-                    return (
-                      <div key={reward.id} className="flex justify-between items-center p-3 rounded-xl border border-white/5 bg-[#0d0d14] group hover:border-white/10 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <button onClick={() => handleDeleteReward(reward.id)} className="w-6 h-6 rounded bg-red-500/10 text-red-400 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all"><Icon d={Icons.x} size={12} /></button>
-                          <div className="text-[13px] font-bold text-slate-200">{reward.title}</div>
+              <div className="mt-2">
+                <div className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2 px-1">Custom Real-Life Rewards</div>
+                <form onSubmit={handleCreateReward} className="bg-white/5 border border-white/10 p-3 rounded-xl flex flex-col gap-3 mb-3">
+                  <div className="flex gap-2">
+                    <input required type="text" placeholder="e.g. Order Pizza 🍕" value={newReward.title} onChange={e => setNewReward({...newReward, title: e.target.value})} className="flex-1 bg-[#0d0d14] border border-white/10 rounded-lg px-3 py-2 text-[12px] text-slate-200 outline-none focus:border-indigo-500/50" />
+                    <input required type="number" min="50" step="50" placeholder="XP Cost" value={newReward.cost} onChange={e => setNewReward({...newReward, cost: e.target.value})} className="w-24 bg-[#0d0d14] border border-white/10 rounded-lg px-3 py-2 text-[12px] text-amber-400 font-bold outline-none focus:border-amber-500/50" />
+                  </div>
+                  <button type="submit" disabled={isSubmitting} className="w-full py-2 bg-indigo-500/20 text-indigo-300 text-[12px] font-bold rounded-lg hover:bg-indigo-500/30 transition-colors">+ Create Custom Reward</button>
+                </form>
+
+                <div className="flex flex-col gap-2">
+                  {customRewards.length === 0 ? (
+                    <div className="text-center text-white/30 text-[12px] py-4">No rewards created yet.</div>
+                  ) : (
+                    customRewards.map(reward => {
+                      const canAfford = gamification.currentBalance >= reward.cost;
+                      return (
+                        <div key={reward.id} className="flex justify-between items-center p-3 rounded-xl border border-white/5 bg-[#0d0d14] group hover:border-white/10 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <button onClick={() => handleDeleteReward(reward.id)} className="w-6 h-6 rounded bg-red-500/10 text-red-400 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all"><Icon d={Icons.x} size={12} /></button>
+                            <div className="text-[13px] font-bold text-slate-200">{reward.title}</div>
+                          </div>
+                          <button 
+                            onClick={() => redeemReward(reward)} disabled={!canAfford}
+                            className={`px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all flex items-center gap-1.5 shrink-0 ml-2 ${canAfford ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 hover:scale-105' : 'bg-white/5 text-white/30 cursor-not-allowed'}`}
+                          >
+                            {reward.cost} XP
+                          </button>
                         </div>
-                        <button 
-                          onClick={() => redeemReward(reward)} disabled={!canAfford}
-                          className={`px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all flex items-center gap-1.5 ${canAfford ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 hover:scale-105' : 'bg-white/5 text-white/30 cursor-not-allowed'}`}
-                        >
-                          {reward.cost} XP
-                        </button>
-                      </div>
-                    );
-                  })
-                )}
+                      );
+                    })
+                  )}
+                </div>
               </div>
             </div>
           )}
 
-          {/* TAB 2: THEME SHOP */}
+          {/* TAB 2: THEMES */}
           {storeTab === "themes" && (
             <div className="flex flex-col gap-3 max-h-[400px] overflow-y-auto pr-2">
               <p className="text-[12px] text-white/50 mb-2">Spend XP to unlock global color themes for your entire dashboard. This uses advanced CSS hue-rotation!</p>
@@ -447,10 +506,53 @@ export default function Goals() {
               })}
             </div>
           )}
+
+          {/* ─── TAB 3: AVATAR FRAMES ─── */}
+          {storeTab === "frames" && (
+            <div className="flex flex-col gap-3 max-h-[400px] overflow-y-auto pr-2">
+              <p className="text-[12px] text-white/50 mb-2">Buy cosmetic borders to show off your prestige on the Leaderboard and Topbar!</p>
+              
+              <div className="grid grid-cols-2 gap-4">
+                {SHOP_FRAMES.map(frame => {
+                  const isUnlocked = profile.owned_frames?.includes(frame.id) || frame.id === "none";
+                  const isActive = profile.equipped_frame === frame.id;
+                  const canAfford = gamification.currentBalance >= frame.cost;
+
+                  return (
+                    <div key={frame.id} className={`flex flex-col items-center p-4 rounded-xl border transition-all ${isActive ? 'bg-indigo-500/10 border-indigo-500/50 shadow-md' : 'bg-[#0d0d14] border-white/5 hover:border-white/10'}`}>
+                      
+                      <div className="mb-4">
+                        <div className={`w-14 h-14 rounded-full flex items-center justify-center ${frame.class}`}>
+                          <div className="w-full h-full rounded-full bg-slate-800 flex items-center justify-center text-lg font-bold text-slate-300">
+                            {getInitials()}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="text-center mb-3">
+                        <div className="text-[13px] font-bold text-slate-200">{frame.name}</div>
+                        <div className={`text-[10px] font-bold mt-0.5 ${isUnlocked ? 'text-green-400' : 'text-amber-400'}`}>
+                          {isUnlocked ? "OWNED" : `${frame.cost.toLocaleString()} XP`}
+                        </div>
+                      </div>
+                      
+                      <button 
+                        onClick={() => handleBuyOrEquipFrame(frame)}
+                        disabled={(!isUnlocked && !canAfford) || isActive}
+                        className={`w-full py-1.5 rounded-lg text-[11px] font-bold transition-all shadow-sm ${isActive ? 'bg-indigo-500/20 text-indigo-300 cursor-default' : isUnlocked ? 'bg-white/10 text-white hover:bg-white/20' : canAfford ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30' : 'bg-white/5 text-white/20 cursor-not-allowed'}`}
+                      >
+                        {isActive ? 'Equipped' : isUnlocked ? 'Equip' : `Buy`}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
 
-      {/* ─── ADD MODALS FOR HABITS/GOALS (Omitted for brevity, they are identical to before!) ─── */}
+      {/* MODALS */}
       <Modal isOpen={isHabitModalOpen} onClose={() => setIsHabitModalOpen(false)} title="Create Daily Habit">
         <form onSubmit={handleAddHabit} className="flex flex-col gap-5">
           <div><label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-1.5">Habit Name *</label><input required type="text" value={newHabit.name} onChange={e => setNewHabit({...newHabit, name: e.target.value})} className="w-full bg-[#0d0d14] border border-white/10 rounded-xl px-4 py-3 text-slate-200 text-[13px] outline-none focus:border-indigo-500/50" /></div>

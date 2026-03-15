@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Icon, Icons } from "../components/ui/Icon";
+import Modal from "../components/ui/Modal";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -12,8 +13,10 @@ const PERSONAS = {
 };
 
 const SMART_ACTIONS = [
+  { id: "coach", name: "Analyze Performance", command: "/coach", cost: 25, icon: "🧠" },
   { id: "studyplan", name: "Generate Study Plan", command: "/studyplan", cost: 20, icon: "📅" },
-  { id: "roast", name: "Roast My Productivity", command: "/roast", cost: 15, icon: "🔥" }
+  { id: "roast", name: "Roast My Productivity", command: "/roast", cost: 15, icon: "🔥" },
+  { id: "parse", name: "Parse Syllabus (Auto-Add)", command: "modal:parse", cost: 50, icon: "📄" }
 ];
 
 export default function AIAssistant() {
@@ -25,34 +28,45 @@ export default function AIAssistant() {
   const [habits, setHabits] = useState([]);
   const [goals, setGoals] = useState([]);
   const [userSettings, setUserSettings] = useState(null);
+  const [studySessions, setStudySessions] = useState([]); 
+  const [profile, setProfile] = useState(null); // 🐛 FIX: Added Profile State
 
   // Chat State
   const [messages, setMessages] = useState([
-    { role: "ai", text: "Welcome to the AI Study Assistant, Powered by Gemini & Llama 3. How can I help you dominate your classes today?" }
+    { role: "ai", text: "Welcome to the AI Study Assistant. I'm connected to your academic database. How can I help you dominate your classes today?" }
   ]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef(null);
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  // Syllabus Parser State
+  const [isParserOpen, setIsParserOpen] = useState(false);
+  const [syllabusText, setSyllabusText] = useState("");
+  const [isParsing, setIsParsing] = useState(false);
 
-  // ─── INITIALIZE GEMINI API ───
+  const todayStr = new Date().toISOString().split('T')[0];
   const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || "dummy_key");
 
-  // ─── FETCH DATA ───
+  // ─── FETCH ALL DATA ───
   useEffect(() => {
     const fetchAll = async () => {
       setLoading(true);
-      const [ { data: tData }, { data: hData }, { data: gData }, { data: sData } ] = await Promise.all([
+      const [ { data: tData }, { data: hData }, { data: gData }, { data: sData }, { data: sessionData }, { data: pData } ] = await Promise.all([
         supabase.from('tasks').select('*'),
         supabase.from('habits').select('*'),
         supabase.from('goals').select('*'),
-        supabase.from('user_settings').select('*').eq('user_id', user.id).single()
+        supabase.from('user_settings').select('*').eq('user_id', user.id).single(),
+        supabase.from('study_sessions').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
+        supabase.from('profiles').select('total_xp').eq('id', user.id).single() // 🐛 FIX: Fetch total_xp from profiles
       ]);
+      
       if (tData) setTasks(tData);
       if (hData) setHabits(hData);
       if (gData) setGoals(gData);
       if (sData) setUserSettings(sData);
+      if (sessionData) setStudySessions(sessionData);
+      if (pData) setProfile(pData); // 🐛 FIX: Set profile data
+      
       setLoading(false);
     };
     fetchAll();
@@ -62,21 +76,23 @@ export default function AIAssistant() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  // ─── XP & WALLET MATH ───
+  // ─── XP MATH ───
   const { currentBalance, activePersona, unlockedPersonas } = useMemo(() => {
-    let earned = 0;
+    // 🐛 FIX: Start 'earned' with the Focus Timer XP from the Profile!
+    let earned = profile?.total_xp || 0; 
+    
     habits.forEach(h => earned += (h.streak * 50));
     goals.forEach(g => { earned += (g.progress === 100 ? 500 : g.progress * 5); });
     
     const spent = userSettings?.xp_spent || 0;
+    
     return {
       currentBalance: earned - spent,
       activePersona: userSettings?.active_persona || 'standard',
       unlockedPersonas: userSettings?.unlocked_personas || ['standard']
     };
-  }, [habits, goals, userSettings]);
+  }, [habits, goals, userSettings, profile]); // 🐛 FIX: Added profile to dependency array
 
-  // ─── STORE ACTIONS ───
   const deductXP = async (amount) => {
     const newSpent = (userSettings?.xp_spent || 0) + amount;
     setUserSettings(prev => ({ ...prev, xp_spent: newSpent }));
@@ -87,10 +103,8 @@ export default function AIAssistant() {
     if (currentBalance < cost) return alert("Not enough XP!");
     const newUnlocked = [...unlockedPersonas, personaId];
     const newSpent = (userSettings?.xp_spent || 0) + cost;
-    
     setUserSettings(prev => ({ ...prev, xp_spent: newSpent, unlocked_personas: newUnlocked, active_persona: personaId }));
     await supabase.from('user_settings').update({ xp_spent: newSpent, unlocked_personas: newUnlocked, active_persona: personaId }).eq('user_id', user.id);
-    
     setMessages(prev => [...prev, { role: "ai", text: `*SYSTEM: Persona Unlocked! I am now operating as ${PERSONAS[personaId].name}.*` }]);
   };
 
@@ -100,10 +114,87 @@ export default function AIAssistant() {
     setMessages(prev => [...prev, { role: "ai", text: `*SYSTEM: Switched to ${PERSONAS[personaId].name}.*` }]);
   };
 
-  // ─── REAL DUAL-ENGINE AI + OFFLINE FALLBACK ───
+  // ─── THE SYLLABUS PARSER ENGINE ───
+  const handleParseSyllabus = async (e) => {
+    e.preventDefault();
+    if (!syllabusText.trim()) return;
+    setIsParsing(true);
+
+    try {
+      const prompt = `
+        You are an advanced academic data extractor. Read the following syllabus text and extract all assignments, essays, exams, and readings. 
+        Format the output strictly as a JSON array of objects. Do NOT wrap it in markdown block quotes. Just the raw JSON array.
+        Each object must have exactly these keys:
+        - "title": (string) The name of the assignment
+        - "subject": (string) Try to infer the subject/class name, otherwise use "General"
+        - "due": (string) Due date formatted strictly as "YYYY-MM-DD"
+        - "priority": (string) Either "low", "medium", or "high" (Exams should be high)
+        
+        Text to parse:
+        ${syllabusText}
+      `;
+
+      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+      const result = await fallbackModel(prompt, model);
+      
+      const cleanJsonStr = result.replace(/```json/g, "").replace(/```/g, "").trim();
+      const extractedTasks = JSON.parse(cleanJsonStr);
+
+      const tasksToInsert = extractedTasks.map(t => ({
+        user_id: user.id,
+        title: t.title,
+        subject: t.subject,
+        due: t.due,
+        priority: t.priority,
+        status: "pending",
+        progress: 0
+      }));
+
+      await supabase.from('tasks').insert(tasksToInsert);
+      setTasks(prev => [...tasksToInsert, ...prev]);
+
+      setIsParserOpen(false);
+      setSyllabusText("");
+      setMessages(prev => [...prev, { role: "ai", text: `✨ **Syllabus Parsed!** I successfully extracted ${extractedTasks.length} assignments and added them to your Kanban board. Go check your Assignments tab!` }]);
+
+    } catch (error) {
+      console.error(error);
+      alert("Failed to parse syllabus. Ensure the text contains clear assignment dates.");
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  // ─── DUAL ENGINE WRAPPER ───
+  const fallbackModel = async (promptText, geminiModel) => {
+    try {
+      const result = await geminiModel.generateContent(promptText);
+      return result.response.text();
+    } catch (err) {
+      console.warn("Gemini failed, trying Groq Llama 3.1...");
+      const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${import.meta.env.VITE_GROQ_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "llama-3.1-8b-instant", messages: [{ role: "user", content: promptText }], max_tokens: 800 })
+      });
+      if (!groqResponse.ok) throw new Error("Groq also failed");
+      const groqData = await groqResponse.json();
+      return groqData.choices[0].message.content;
+    }
+  };
+
+  // ─── MAIN CHAT HANDLER ───
   const handleSendMessage = async (e, forcedText = null, actionCost = 0) => {
     if (e) e.preventDefault();
     const textToSend = forcedText || input;
+
+    if (textToSend === "modal:parse") {
+      if (currentBalance < actionCost) return alert("Not enough XP!");
+      await deductXP(actionCost);
+      setIsParserOpen(true);
+      return;
+    }
+
     if (!textToSend.trim()) return;
 
     if (actionCost > 0) {
@@ -123,7 +214,16 @@ export default function AIAssistant() {
       const pendingTasks = tasks.filter(t => t.status !== "completed");
       const missedHabits = habits.filter(h => h.last_completed !== todayStr);
 
-      if (textToSend === "/studyplan") {
+      if (textToSend === "/coach") {
+        const recentMoods = studySessions.map(s => `${s.subject}: ${s.duration_minutes}m (${s.mood})`).join(", ");
+        finalPrompt = `You are an elite academic coach. Analyze the user's data:
+          Pending Tasks: ${pendingTasks.length}
+          Missed Habits Today: ${missedHabits.map(h => h.name).join(', ') || "None"}
+          Recent Study Sessions: ${recentMoods || "No recent sessions logged."}
+          
+          Provide a highly personalized, empathetic 3-step action plan based on their recent moods and workload. Under 100 words.`;
+      } 
+      else if (textToSend === "/studyplan") {
         finalPrompt = `You are a strict academic advisor. Student has these pending assignments: ${JSON.stringify(pendingTasks.map(t => t.title + " due " + t.due))}. Generate a short, bulleted 1-day study plan. Under 100 words.`;
       } 
       else if (textToSend === "/roast") {
@@ -138,56 +238,13 @@ export default function AIAssistant() {
         finalPrompt = `${personaContext}\n\nUser: ${textToSend}`;
       }
 
-      let aiResponseText = "";
-
-      // ─── TIER 1: GEMINI (Universally Supported 'gemini-pro') ───
-      try {
-        const fallbackModel = genAI.getGenerativeModel({ model: "gemini-pro" });
-        const result = await fallbackModel.generateContent(finalPrompt);
-        aiResponseText = result.response.text();
-      } 
-      // ─── TIER 2: GROQ (Updated to Llama 3.1) ───
-      catch (geminiError) {
-        console.warn("Gemini 404'd or failed. Falling back to Groq Llama 3.1...");
-        
-        try {
-          const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${import.meta.env.VITE_GROQ_API_KEY}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              model: "llama-3.1-8b-instant", // Updated model name
-              messages: [{ role: "user", content: finalPrompt }],
-              max_tokens: 500
-            })
-          });
-
-          if (!groqResponse.ok) {
-            const errData = await groqResponse.json();
-            throw new Error(errData.error?.message || "Groq 400 Error");
-          }
-          const groqData = await groqResponse.json();
-          aiResponseText = groqData.choices[0].message.content;
-        } 
-        // ─── TIER 3: PORTFOLIO LIFESAVER (Offline Simulation) ───
-        catch (groqError) {
-          console.warn("Groq also failed. Entering Offline Simulation Mode.");
-          
-          let offlineResponse = "⚠️ *API Connection Offline.*\n\n(Simulated Fallback): I'm currently operating without an internet connection, but I'm still here to help you track your progress!";
-          
-          if (textToSend === "/roast") offlineResponse = `⚠️ *API Offline.*\n\n(Simulated Roast): You have ${pendingTasks.length} incomplete tasks gathering dust. Stop testing my API failovers and get to work! ☕`;
-          if (textToSend === "/studyplan") offlineResponse = `⚠️ *API Offline.*\n\n(Simulated Plan):\n• Focus on your highest priority task first.\n• Complete your daily habits.\n• Take a 10-minute break.`;
-          
-          aiResponseText = offlineResponse;
-        }
-      }
+      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+      const aiResponseText = await fallbackModel(finalPrompt, model);
 
       setMessages(prev => [...prev, { role: "ai", text: aiResponseText }]);
 
     } catch (error) {
-      setMessages(prev => [...prev, { role: "ai", text: "Critical System Failure." }]);
+      setMessages(prev => [...prev, { role: "ai", text: "⚠️ Both Gemini and Groq API clusters are currently offline. Running in simulation mode." }]);
     } finally {
       setIsTyping(false);
     }
@@ -201,7 +258,7 @@ export default function AIAssistant() {
       {/* ─── HEADER ─── */}
       <div className="flex justify-between items-center bg-white/5 border border-white/10 p-4 rounded-2xl shrink-0">
         <div>
-          <h2 className="text-[20px] font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 font-['Sora'] tracking-tight">
+          <h2 className="text-[20px] font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 font-['Plus_Jakarta_Sans'] tracking-tight">
             AI Study Assistant
           </h2>
           <p className="text-white/40 text-[12px] font-medium">Powered by Gemini & Groq</p>
@@ -265,6 +322,7 @@ export default function AIAssistant() {
         {/* ─── SIDEBAR: AI STORE & COMMANDS ─── */}
         <div className="w-full lg:w-80 flex flex-col gap-4 shrink-0 overflow-y-auto pr-1">
           
+          {/* SMART ACTIONS */}
           <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
             <h3 className="text-slate-100 font-semibold text-[14px] mb-4 flex items-center gap-2">
               <span className="text-indigo-400">⚡</span> Premium Actions
@@ -280,7 +338,7 @@ export default function AIAssistant() {
                   >
                     <div className="flex items-center gap-3">
                       <span className="text-lg">{action.icon}</span>
-                      <span className="text-[12px] font-bold text-slate-200 group-hover:text-indigo-300 transition-colors">{action.name}</span>
+                      <span className={`text-[12px] font-bold text-slate-200 transition-colors ${action.id === 'parse' ? 'group-hover:text-green-400' : 'group-hover:text-indigo-300'}`}>{action.name}</span>
                     </div>
                     <div className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-2 py-1 rounded-md">-{action.cost} XP</div>
                   </button>
@@ -289,6 +347,7 @@ export default function AIAssistant() {
             </div>
           </div>
 
+          {/* PERSONA SHOP */}
           <div className="bg-white/5 border border-white/10 rounded-3xl p-5 flex-1">
             <h3 className="text-slate-100 font-semibold text-[14px] mb-1 flex items-center gap-2">
               <span className="text-purple-400">🎭</span> AI Personas
@@ -323,9 +382,37 @@ export default function AIAssistant() {
               })}
             </div>
           </div>
-
         </div>
       </div>
+
+      {/* ─── THE NEW SYLLABUS PARSER MODAL ─── */}
+      <Modal isOpen={isParserOpen} onClose={() => setIsParserOpen(false)} title="Syllabus Auto-Parser">
+        <form onSubmit={handleParseSyllabus} className="flex flex-col gap-4">
+          <div>
+            <p className="text-[13px] text-white/60 mb-4 leading-relaxed">
+              Paste the text from your course syllabus below. Gemini will scan it, extract all assignment names and due dates, and magically add them to your Kanban board!
+            </p>
+            <textarea 
+              value={syllabusText} 
+              onChange={(e) => setSyllabusText(e.target.value)}
+              placeholder="Paste syllabus text here (e.g., 'Midterm Exam is on Oct 14th. Final Essay due Nov 2nd...')"
+              className="w-full h-48 bg-[#0d0d14] border border-white/10 rounded-xl p-4 text-slate-200 text-[13px] outline-none focus:border-indigo-500/50 resize-none transition-colors leading-relaxed"
+            />
+          </div>
+          <button 
+            type="submit" 
+            disabled={isParsing || !syllabusText.trim()}
+            className="w-full flex items-center justify-center gap-2 bg-gradient-to-br from-green-500 to-emerald-600 text-white font-bold text-[13px] py-3.5 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 shadow-lg shadow-green-500/20"
+          >
+            {isParsing ? (
+              <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Analyzing Syllabus...</>
+            ) : (
+              <>✨ Extract & Add Tasks</>
+            )}
+          </button>
+        </form>
+      </Modal>
+
     </div>
   );
 }
