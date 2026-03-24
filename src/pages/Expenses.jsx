@@ -6,6 +6,10 @@ import { Icon, Icons } from "../components/ui/Icon";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 
+<<<<<<< HEAD
+=======
+// Updated Categories
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
 const CATEGORY_CONFIG = {
   "Food & Canteen": { icon: "🍱", color: "#f87171" },
   "Transport": { icon: "🚌", color: "#34d399" },
@@ -31,23 +35,41 @@ export default function Expenses() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   
+<<<<<<< HEAD
   const [view, setView] = useState("overview"); 
   const [monthlyBudget, setMonthlyBudget] = useState(7000);
   const [currentDate, setCurrentDate] = useState(new Date());
 
+=======
+  // ─── UI STATES ───
+  const [view, setView] = useState("overview"); // "overview" | "history"
+  const [monthlyBudget, setMonthlyBudget] = useState(7000);
+  const [currentDate, setCurrentDate] = useState(new Date());
+
+  // ─── HISTORY TAB STATES ───
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   const [timeFilter, setTimeFilter] = useState("1m");
   const [categoryFilter, setCategoryFilter] = useState("All Categories");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
   
+<<<<<<< HEAD
   const [showTimeDropdown, setShowTimeDropdown] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
 
+=======
+  // Dropdown Toggles
+  const [showTimeDropdown, setShowTimeDropdown] = useState(false);
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+
+  // ─── MODAL STATES ───
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newBudgetInput, setNewBudgetInput] = useState("");
   const [errors, setErrors] = useState({});
+<<<<<<< HEAD
 
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -56,12 +78,20 @@ export default function Expenses() {
     amount: "", category: "Food & Canteen", note: "", date: todayStr
   });
 
+=======
+  const [newExpense, setNewExpense] = useState({
+    amount: "", category: "Food & Canteen", note: "", date: new Date().toISOString().split('T')[0]
+  });
+
+  // ─── FETCH DATA ───
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   useEffect(() => {
     fetchData();
   }, [user]);
 
   const fetchData = async () => {
     setLoading(true);
+<<<<<<< HEAD
     
     const { data: expData } = await supabase.from('expenses').select('*').eq('user_id', user.id).order('date', { ascending: false }).order('created_at', { ascending: false });
     if (expData) setAllExpenses(expData);
@@ -76,6 +106,19 @@ export default function Expenses() {
       setNewBudgetInput(7000);
     }
     
+=======
+    const { data: expData } = await supabase.from('expenses').select('*').order('date', { ascending: false }).order('created_at', { ascending: false });
+    if (expData) setAllExpenses(expData);
+
+    const { data: settingsData } = await supabase.from('user_settings').select('monthly_budget').eq('user_id', user.id).single();
+    if (settingsData) {
+      setMonthlyBudget(settingsData.monthly_budget);
+      setNewBudgetInput(settingsData.monthly_budget);
+    } else {
+      await supabase.from('user_settings').insert([{ user_id: user.id, monthly_budget: 7000 }]);
+      setNewBudgetInput(7000);
+    }
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     setLoading(false);
   };
 
@@ -84,12 +127,20 @@ export default function Expenses() {
     setTimeout(() => setToast(null), 3000);
   };
 
+<<<<<<< HEAD
+=======
+  // ─── HANDLERS ───
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   const handleUpdateBudget = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     const val = Number(newBudgetInput);
     if (val > 0) {
+<<<<<<< HEAD
       await supabase.from('profiles').update({ monthly_budget: val }).eq('id', user.id);
+=======
+      await supabase.from('user_settings').update({ monthly_budget: val }).eq('user_id', user.id);
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       setMonthlyBudget(val);
       setIsSettingsModalOpen(false);
       showToast("Budget updated!");
@@ -117,7 +168,11 @@ export default function Expenses() {
     if (!error && data) {
       setAllExpenses(prev => [data[0], ...prev].sort((a, b) => new Date(b.date) - new Date(a.date)));
       setIsModalOpen(false);
+<<<<<<< HEAD
       setNewExpense({ amount: "", category: "Food & Canteen", note: "", date: todayStr });
+=======
+      setNewExpense({ amount: "", category: "Food & Canteen", note: "", date: new Date().toISOString().split('T')[0] });
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       showToast("Expense logged!");
       setCurrentDate(new Date(newExpense.date)); 
     }
@@ -131,6 +186,10 @@ export default function Expenses() {
     showToast("Transaction deleted.");
   };
 
+<<<<<<< HEAD
+=======
+  // ─── OVERVIEW CALCULATIONS ───
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   const changeMonth = (offset) => {
     const newDate = new Date(currentDate);
     newDate.setMonth(newDate.getMonth() + offset);
@@ -157,11 +216,20 @@ export default function Expenses() {
     return acc;
   }, {});
 
+<<<<<<< HEAD
   const recentTwoDaysExpenses = useMemo(() => {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
     const twoDaysAgo = new Date(startOfToday);
     twoDaysAgo.setDate(startOfToday.getDate() - 2);
+=======
+  // Recent 2 Days Calculation
+  const recentTwoDaysExpenses = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const twoDaysAgo = new Date(today);
+    twoDaysAgo.setDate(today.getDate() - 2);
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     
     return allExpenses.filter(e => {
       const d = new Date(e.date);
@@ -169,6 +237,7 @@ export default function Expenses() {
     });
   }, [allExpenses]);
 
+<<<<<<< HEAD
   const allTimeSpent = allExpenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
   
   const allTimeSavings = useMemo(() => {
@@ -185,17 +254,29 @@ export default function Expenses() {
   }, [allExpenses, monthlyBudget, allTimeSpent]);
 
   // ─── BUG FIX: CORRECTED HISTORY MATH ───
+=======
+  // All-Time Savings
+  const allTimeSpent = allExpenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
+  const activeMonths = Math.max(1, new Set(allExpenses.map(e => e.date.substring(0, 7))).size);
+  const allTimeSavings = (activeMonths * monthlyBudget) - allTimeSpent;
+
+  // ─── HISTORY FILTERING & PAGINATION ───
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   const filteredHistory = useMemo(() => {
     let filtered = allExpenses;
 
     const now = new Date();
     const cutoff = new Date();
     if (timeFilter !== "all") {
+<<<<<<< HEAD
       // Corrected logic: safely parses 1m vs 1y 
       const monthsToSubtract = timeFilter.endsWith('y') 
         ? parseInt(timeFilter) * 12 
         : parseInt(timeFilter);
         
+=======
+      const monthsToSubtract = parseInt(timeFilter.replace('m', '').replace('y', '12'));
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       cutoff.setMonth(now.getMonth() - monthsToSubtract);
       filtered = filtered.filter(e => new Date(e.date) >= cutoff);
     }
@@ -203,20 +284,37 @@ export default function Expenses() {
     if (categoryFilter !== "All Categories") {
       filtered = filtered.filter(e => e.category === categoryFilter);
     }
+<<<<<<< HEAD
+=======
+
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     return filtered;
   }, [allExpenses, timeFilter, categoryFilter]);
 
   const historyTotalSpent = filteredHistory.reduce((acc, curr) => acc + Number(curr.amount), 0);
+<<<<<<< HEAD
   const totalPages = Math.ceil(filteredHistory.length / itemsPerPage) || 1;
   const currentHistoryItems = filteredHistory.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   useEffect(() => {
     setCurrentPage(1);
   }, [timeFilter, categoryFilter]);
+=======
+
+  const totalPages = Math.ceil(filteredHistory.length / itemsPerPage) || 1;
+  const currentHistoryItems = filteredHistory.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  useEffect(() => { setCurrentPage(1); }, [timeFilter, categoryFilter]);
+
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
 
   return (
     <div className="flex flex-col gap-5 relative pb-10">
       
+<<<<<<< HEAD
+=======
+      {/* ─── HEADER & NAVIGATOR ─── */}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       <div className="flex justify-between items-center flex-wrap gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl">
         <div>
           <h2 className="text-slate-100 font-bold text-[20px] font-['Sora']">Expense Tracker</h2>
@@ -250,6 +348,10 @@ export default function Expenses() {
         </button>
       </div>
 
+<<<<<<< HEAD
+=======
+      {/* ─── OVERVIEW TAB ─── */}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       {view === "overview" && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -259,6 +361,10 @@ export default function Expenses() {
             <StatCard label="Transactions" value={monthlyExpenses.length} sub="Logged this month" icon="chart" color="#f472b6" />
           </div>
 
+<<<<<<< HEAD
+=======
+          {/* BUDGET PROGRESS */}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
           <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
             <div className="flex justify-between items-end mb-3">
               <div className="flex items-center gap-3">
@@ -278,9 +384,13 @@ export default function Expenses() {
               <div className="absolute top-[-2px] bottom-[-2px] w-[2px] bg-amber-400 rounded-sm z-10 opacity-70" style={{ left: '80%' }} title="80% Warning Limit" />
             </div>
             <div className="flex justify-between mt-2 text-[11px] font-medium text-white/40">
+<<<<<<< HEAD
               <span>₹{totalSpentThisMonth.toLocaleString()} spent</span>
               <span>80% Warning</span>
               <span>₹{monthlyBudget.toLocaleString()} limit</span>
+=======
+              <span>₹0</span><span>80% Warning</span><span>₹{monthlyBudget.toLocaleString()}</span>
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
             </div>
           </div>
 
@@ -349,6 +459,10 @@ export default function Expenses() {
         </>
       )}
 
+<<<<<<< HEAD
+=======
+      {/* ─── HISTORY TAB ─── */}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       {view === "history" && (
         <div className="flex flex-col gap-4 animate-[fadeIn_0.2s_ease-out]">
           <div className="bg-white/5 border border-white/10 rounded-2xl p-5 flex flex-col md:flex-row justify-between items-center gap-4">
@@ -450,6 +564,10 @@ export default function Expenses() {
         </div>
       )}
 
+<<<<<<< HEAD
+=======
+      {/* ─── ADD EXPENSE MODAL ─── */}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Log New Expense">
         <form onSubmit={handleAddExpense} className="flex flex-col gap-5">
           <div className="grid grid-cols-2 gap-4">
@@ -486,6 +604,10 @@ export default function Expenses() {
         </form>
       </Modal>
 
+<<<<<<< HEAD
+=======
+      {/* ─── SETTINGS MODAL ─── */}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       <Modal isOpen={isSettingsModalOpen} onClose={() => setIsSettingsModalOpen(false)} title="Budget Settings">
         <form onSubmit={handleUpdateBudget} className="flex flex-col gap-5">
           <div>
@@ -499,6 +621,10 @@ export default function Expenses() {
         </form>
       </Modal>
 
+<<<<<<< HEAD
+=======
+      {/* ─── TOAST NOTIFICATION ─── */}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 bg-green-500/10 border border-green-500/30 text-green-400 px-5 py-3 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3 animate-[fadeIn_0.3s_ease-out]">
           <div className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center">✓</div>

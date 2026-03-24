@@ -15,6 +15,7 @@ export default function Analytics() {
 
   useEffect(() => {
     const fetchAllData = async () => {
+<<<<<<< HEAD
       if (!user) return;
       
       setLoading(true);
@@ -27,6 +28,16 @@ export default function Analytics() {
         supabase.from('grades').select('*').eq('user_id', user.id).order('semester', { ascending: true }),
         supabase.from('habits').select('*').eq('user_id', user.id),
         supabase.from('goals').select('*').eq('user_id', user.id),
+=======
+      setLoading(true);
+      const [ tData, attData, eData, gData, hData, glData, sData ] = await Promise.all([
+        supabase.from('tasks').select('*'),
+        supabase.from('attendance').select('*'),
+        supabase.from('expenses').select('*'),
+        supabase.from('grades').select('*').order('semester', { ascending: true }),
+        supabase.from('habits').select('*'),
+        supabase.from('goals').select('*'),
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
         supabase.from('user_settings').select('*').eq('user_id', user.id).single()
       ]);
 
@@ -39,10 +50,15 @@ export default function Analytics() {
         goals: glData.data || [],
         settings: sData.data || { monthly_budget: 7000, xp_spent: 0 }
       });
+<<<<<<< HEAD
       
       setLoading(false);
     };
     
+=======
+      setLoading(false);
+    };
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     fetchAllData();
   }, [user]);
 
@@ -89,6 +105,7 @@ export default function Analytics() {
     // MASTER SCORE
     const masterScore = Math.round((productivityScore * 0.2) + (consistencyScore * 0.2) + (academicScore * 0.2) + (attendanceScore * 0.2) + (financeScore * 0.2));
 
+<<<<<<< HEAD
     // ─── NEW: 7-DAY VELOCITY TRACKER (UTC-Drift Proof) ───
     const last7Days = Array.from({length: 7}, (_, i) => {
       const d = new Date();
@@ -97,6 +114,13 @@ export default function Analytics() {
       const mo = String(d.getMonth() + 1).padStart(2, '0');
       const dy = String(d.getDate()).padStart(2, '0');
       return `${yr}-${mo}-${dy}`;
+=======
+    // ─── NEW: 7-DAY VELOCITY TRACKER ───
+    const last7Days = Array.from({length: 7}, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      return d.toISOString().split('T')[0];
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     });
     
     const velocityChart = last7Days.map(dateStr => {

@@ -51,6 +51,7 @@ export default function Goals() {
   const [newGoal, setNewGoal] = useState({ title: "", deadline: "", emoji: "🎯" });
   const [newReward, setNewReward] = useState({ title: "", cost: 500, icon: "🎁" });
 
+<<<<<<< HEAD
   // ⏰ FIX: Local Timezone Math
   const getLocalDateString = (dateObj) => {
     const year = dateObj.getFullYear();
@@ -65,6 +66,9 @@ export default function Goals() {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayStr = getLocalDateString(yesterday);
+=======
+  const todayStr = new Date().toISOString().split('T')[0];
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
 
   // ─── GLOBAL THEME INJECTION ───
   useEffect(() => {
@@ -81,6 +85,7 @@ export default function Goals() {
 
   const fetchData = async () => {
     setLoading(true);
+<<<<<<< HEAD
     // 🔒 FIX: Added .eq('user_id', user.id) to EVERY table!
     const [
       { data: habitsData },
@@ -102,6 +107,28 @@ export default function Goals() {
     if (settingsData) setUserSettings(settingsData);
     if (profileData) setProfile(prev => ({ ...prev, ...profileData }));
     
+=======
+    const [ { data: hData }, { data: gData }, { data: rData }, { data: sData }, { data: pData } ] = await Promise.all([
+      supabase.from('habits').select('*').order('created_at', { ascending: true }),
+      supabase.from('goals').select('*').order('created_at', { ascending: false }),
+      supabase.from('custom_rewards').select('*').order('cost', { ascending: true }),
+      supabase.from('user_settings').select('*').eq('user_id', user.id).single(),
+      supabase.from('profiles').select('*').eq('id', user.id).single() 
+    ]);
+    
+    if (hData) setHabits(hData);
+    if (gData) setGoals(gData);
+    if (rData) setCustomRewards(rData);
+    if (pData) setProfile(pData);
+    
+    if (sData) {
+      setUserSettings(sData);
+    } else {
+      const def = { user_id: user.id, monthly_budget: 7000, xp_spent: 0, active_theme: 'default', unlocked_themes: ['default'] };
+      await supabase.from('user_settings').insert([def]);
+      setUserSettings(def);
+    }
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     setLoading(false);
   };
 
@@ -152,22 +179,39 @@ export default function Goals() {
     let newLastCompleted = habit.last_completed;
 
     if (isDoneToday) {
+<<<<<<< HEAD
       // 🐛 FIX: The Un-Check Bug! Revert to yesterday if streak > 0!
       newStreak = Math.max(0, habit.streak - 1);
       newLastCompleted = newStreak > 0 ? yesterdayStr : null; 
     } else {
       newStreak = (habit.last_completed === yesterdayStr) ? habit.streak + 1 : 1;
+=======
+      newStreak = Math.max(0, habit.streak - 1);
+      newLastCompleted = null; 
+    } else {
+      const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      newStreak = (habit.last_completed === yesterdayStr) ? newStreak + 1 : 1;
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       newLastCompleted = todayStr;
     }
 
     setHabits(prev => prev.map(h => h.id === habit.id ? { ...h, streak: newStreak, last_completed: newLastCompleted } : h));
+<<<<<<< HEAD
     await supabase.from('habits').update({ streak: newStreak, last_completed: newLastCompleted }).eq('id', habit.id).eq('user_id', user.id);
+=======
+    await supabase.from('habits').update({ streak: newStreak, last_completed: newLastCompleted }).eq('id', habit.id);
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   };
 
   const deleteHabit = async (id) => {
     if(!window.confirm("Delete this habit?")) return;
     setHabits(prev => prev.filter(h => h.id !== id));
+<<<<<<< HEAD
     await supabase.from('habits').delete().eq('id', id).eq('user_id', user.id);
+=======
+    await supabase.from('habits').delete().eq('id', id);
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   };
 
   const handleAddGoal = async (e) => {
@@ -181,14 +225,22 @@ export default function Goals() {
   const updateGoalProgress = async (id, currentProgress, change) => {
     let newProgress = Math.max(0, Math.min(100, currentProgress + change));
     setGoals(prev => prev.map(g => g.id === id ? { ...g, progress: newProgress } : g));
+<<<<<<< HEAD
     await supabase.from('goals').update({ progress: newProgress }).eq('id', id).eq('user_id', user.id);
+=======
+    await supabase.from('goals').update({ progress: newProgress }).eq('id', id);
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     if(newProgress === 100 && currentProgress !== 100) showToast("Goal Completed! 🎉");
   };
 
   const deleteGoal = async (id) => {
     if(!window.confirm("Delete this goal?")) return;
     setGoals(prev => prev.filter(g => g.id !== id));
+<<<<<<< HEAD
     await supabase.from('goals').delete().eq('id', id).eq('user_id', user.id);
+=======
+    await supabase.from('goals').delete().eq('id', id);
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   };
 
   // ─── STORE & THEME LOGIC ───
@@ -202,6 +254,7 @@ export default function Goals() {
 
   const handleDeleteReward = async (id) => {
     setCustomRewards(prev => prev.filter(r => r.id !== id));
+<<<<<<< HEAD
     await supabase.from('custom_rewards').delete().eq('id', id).eq('user_id', user.id);
   };
 
@@ -211,6 +264,13 @@ export default function Goals() {
       showToast("Not enough XP to redeem this reward!"); 
       return; 
     }
+=======
+    await supabase.from('custom_rewards').delete().eq('id', id);
+  };
+
+  const redeemReward = async (reward) => {
+    if (gamification.currentBalance < reward.cost) { alert("Not enough XP!"); return; }
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     const newSpent = userSettings.xp_spent + reward.cost;
     setUserSettings(prev => ({ ...prev, xp_spent: newSpent }));
     await supabase.from('user_settings').update({ xp_spent: newSpent }).eq('user_id', user.id);
@@ -225,11 +285,15 @@ export default function Goals() {
       await supabase.from('user_settings').update({ active_theme: themeKey }).eq('user_id', user.id);
       showToast("Theme Equipped!");
     } else {
+<<<<<<< HEAD
       // 💰 FIX: Strict frontend validation!
       if (gamification.currentBalance < config.cost) { 
         showToast("Nice try! Not enough XP to buy this theme."); 
         return; 
       }
+=======
+      if (gamification.currentBalance < config.cost) { alert("Not enough XP!"); return; }
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       const newSpent = userSettings.xp_spent + config.cost;
       const newUnlocked = [...userSettings.unlocked_themes, themeKey];
       setUserSettings(prev => ({ ...prev, xp_spent: newSpent, unlocked_themes: newUnlocked, active_theme: themeKey }));
@@ -239,11 +303,15 @@ export default function Goals() {
   };
 
   const handleBuyFreeze = async () => {
+<<<<<<< HEAD
     // 💰 FIX: Strict frontend validation!
     if (gamification.currentBalance < 500) { 
       showToast("Not enough XP to buy a Freeze!"); 
       return; 
     }
+=======
+    if (gamification.currentBalance < 500) { alert("Not enough XP!"); return; }
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     const newSpent = userSettings.xp_spent + 500;
     const newFreezes = profile.streak_freezes_owned + 1;
     setUserSettings(prev => ({ ...prev, xp_spent: newSpent }));
@@ -264,11 +332,15 @@ export default function Goals() {
       await supabase.from('profiles').update({ equipped_frame: frame.id }).eq('id', user.id);
       showToast("Frame Equipped!");
     } else {
+<<<<<<< HEAD
       // 💰 FIX: Strict frontend validation!
       if (gamification.currentBalance < frame.cost) { 
         showToast("Nice try! Not enough XP to buy this frame."); 
         return; 
       }
+=======
+      if (gamification.currentBalance < frame.cost) { alert("Not enough XP!"); return; }
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       
       const newSpent = userSettings.xp_spent + frame.cost;
       const newOwned = [...(profile.owned_frames || ['none']), frame.id];

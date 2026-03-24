@@ -5,6 +5,7 @@ import { Icon, Icons } from "../components/ui/Icon";
 import { motion } from "framer-motion";
 
 // ─── 1. INTERACTIVE FEATURE CARD COMPONENT ───
+<<<<<<< HEAD
 
 // 🎨 FIX: Tailwind Dynamic Class Map
 // Tailwind purges dynamic strings during build, so we explicitly map them here!
@@ -29,6 +30,15 @@ const FeatureCard = ({ icon, title, desc, videoPlaceholder, colorClass }) => {
   return (
     <div 
       className={`bg-white/5 border border-white/10 rounded-3xl p-8 transition-all duration-300 group relative overflow-hidden h-full flex flex-col cursor-pointer ${styles.wrapper}`}
+=======
+// Uses "Lazy Render" for the video to save bandwidth until hovered.
+const FeatureCard = ({ icon, title, desc, videoPlaceholder, colorClass }) => {
+  const [isHovered, setIsHovered] = useState(false);
+
+  return (
+    <div 
+      className={`bg-white/5 border border-white/10 rounded-3xl p-8 transition-all duration-300 group relative overflow-hidden h-full flex flex-col cursor-pointer hover:border-${colorClass}-500/50`}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={() => setIsHovered(!isHovered)} // Mobile tap support
@@ -36,15 +46,25 @@ const FeatureCard = ({ icon, title, desc, videoPlaceholder, colorClass }) => {
       {/* Lazy-loaded Video Background overlay */}
       {isHovered && (
         <div className="absolute inset-0 z-0 opacity-10 mix-blend-screen transition-opacity duration-500">
+<<<<<<< HEAD
           {/* 🎬 FIX: Replaced the cartoon bunny with a professional local placeholder */}
           <video autoPlay loop muted playsInline className="w-full h-full object-cover">
             <source src="/demo.mp4" type="video/mp4" />
+=======
+          {/* Replace src with your actual Loom/Demo video URL later */}
+          <video autoPlay loop muted playsInline className="w-full h-full object-cover">
+            <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4" />
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
           </video>
         </div>
       )}
 
       <div className="relative z-10 flex-1">
+<<<<<<< HEAD
         <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform ${styles.iconBg} ${styles.iconText}`}>
+=======
+        <div className={`w-14 h-14 rounded-2xl bg-${colorClass}-500/20 text-${colorClass}-400 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform`}>
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
           <Icon d={icon} size={28} />
         </div>
         <h3 className="text-xl font-bold text-white mb-3">{title}</h3>
@@ -106,7 +126,11 @@ export default function Landing() {
           </div>
           <div className="flex items-center gap-4">
             <Link to="/login" className="text-sm font-bold text-white/60 hover:text-white transition-colors">Sign In</Link>
+<<<<<<< HEAD
             <Link to="/login" className="text-sm font-bold bg-white text-[#0d0d14] px-5 py-2.5 rounded-full hover:bg-indigo-50 transition-colors shadow-[0_0_20px_rgba(255,255,255,0.2)]">
+=======
+            <Link to="/signup" className="text-sm font-bold bg-white text-[#0d0d14] px-5 py-2.5 rounded-full hover:bg-indigo-50 transition-colors shadow-[0_0_20px_rgba(255,255,255,0.2)]">
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
               Get Started Free
             </Link>
           </div>
@@ -133,7 +157,11 @@ export default function Landing() {
           </p>
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+<<<<<<< HEAD
             <Link to="/login" className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-bold text-[15px] hover:scale-105 transition-transform shadow-[0_0_30px_rgba(99,102,241,0.4)]">
+=======
+            <Link to="/signup" className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-bold text-[15px] hover:scale-105 transition-transform shadow-[0_0_30px_rgba(99,102,241,0.4)]">
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
               Start Your Journey
             </Link>
             <button onClick={scrollToFeatures} className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-white/5 border border-white/10 text-white font-bold text-[15px] hover:bg-white/10 transition-colors">
@@ -218,22 +246,37 @@ export default function Landing() {
           <div className="flex justify-center items-end gap-4 md:gap-8 h-[200px] relative z-10">
             {/* Silver */}
             <div className="flex flex-col items-center">
+<<<<<<< HEAD
               <div className="w-14 h-14 rounded-full border-4 border-slate-300 bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-200 mb-2 shadow-[0_0_15px_rgba(203,213,225,0.3)]">P</div>
               <div className="text-[12px] font-bold text-slate-200 mb-1">Pratik</div>
+=======
+              <div className="w-14 h-14 rounded-full border-4 border-slate-300 bg-slate-800 flex items-center justify-center text-sm font-bold text-slate-200 mb-2 shadow-[0_0_15px_rgba(203,213,225,0.3)]">SC</div>
+              <div className="text-[12px] font-bold text-slate-200 mb-1">Sarah</div>
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
               <div className="text-[10px] font-extrabold text-slate-400 mb-2">12,450 XP</div>
               <div className="w-20 md:w-28 h-24 bg-gradient-to-t from-slate-400/20 to-slate-400/5 border border-slate-400/20 rounded-t-xl flex justify-center"><span className="text-slate-400/50 font-black text-2xl mt-3">2</span></div>
             </div>
             {/* Gold */}
             <div className="flex flex-col items-center">
+<<<<<<< HEAD
               <div className="w-16 h-16 rounded-full border-4 border-amber-400 bg-amber-900/50 flex items-center justify-center text-lg font-black text-amber-100 mb-2 shadow-[0_0_20px_rgba(251,191,36,0.4)]">S</div>
               <div className="text-[14px] font-black text-amber-400 mb-1">Sagar</div>
+=======
+              <div className="w-16 h-16 rounded-full border-4 border-amber-400 bg-amber-900/50 flex items-center justify-center text-lg font-black text-amber-100 mb-2 shadow-[0_0_20px_rgba(251,191,36,0.4)]">AC</div>
+              <div className="text-[14px] font-black text-amber-400 mb-1">Alex</div>
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
               <div className="text-[11px] font-extrabold text-amber-200/70 mb-2">15,200 XP</div>
               <div className="w-24 md:w-32 h-32 bg-gradient-to-t from-amber-500/20 to-amber-500/5 border border-amber-500/30 rounded-t-xl shadow-[0_0_30px_rgba(251,191,36,0.1)] flex justify-center"><span className="text-amber-500/40 font-black text-4xl mt-3">1</span></div>
             </div>
             {/* Bronze */}
             <div className="flex flex-col items-center">
+<<<<<<< HEAD
               <div className="w-14 h-14 rounded-full border-4 border-orange-700 bg-orange-900/50 flex items-center justify-center text-sm font-bold text-orange-200 mb-2 shadow-[0_0_15px_rgba(194,65,12,0.3)]">Y</div>
               <div className="text-[12px] font-bold text-slate-200 mb-1">Yaksh</div>
+=======
+              <div className="w-14 h-14 rounded-full border-4 border-orange-700 bg-orange-900/50 flex items-center justify-center text-sm font-bold text-orange-200 mb-2 shadow-[0_0_15px_rgba(194,65,12,0.3)]">DM</div>
+              <div className="text-[12px] font-bold text-slate-200 mb-1">David</div>
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
               <div className="text-[10px] font-extrabold text-orange-400 mb-2">10,800 XP</div>
               <div className="w-20 md:w-28 h-20 bg-gradient-to-t from-orange-700/20 to-orange-700/5 border border-orange-700/20 rounded-t-xl flex justify-center"><span className="text-orange-700/50 font-black text-2xl mt-3">3</span></div>
             </div>
@@ -261,7 +304,11 @@ export default function Landing() {
           
           <h2 className="text-4xl md:text-5xl font-extrabold text-white mb-6 relative z-10 tracking-tight">Ready to pilot your education?</h2>
           <p className="text-indigo-100 mb-10 text-lg max-w-2xl mx-auto relative z-10">Join thousands of students who have already gamified their studies and taken control of their semester.</p>
+<<<<<<< HEAD
           <Link to="/login" className="relative z-10 inline-block bg-white text-indigo-700 font-extrabold text-[16px] px-10 py-5 rounded-2xl hover:scale-105 hover:shadow-2xl transition-all">
+=======
+          <Link to="/signup" className="relative z-10 inline-block bg-white text-indigo-700 font-extrabold text-[16px] px-10 py-5 rounded-2xl hover:scale-105 hover:shadow-2xl transition-all">
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
             Get Started for Free
           </Link>
         </div>

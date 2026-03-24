@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+<<<<<<< HEAD
 import { Link, useNavigate } from "react-router-dom";
 import { Icon, Icons } from "../components/ui/Icon";
 import ProgressBar from "../components/ui/ProgressBar";
@@ -26,11 +27,32 @@ export default function Dashboard() {
   const month = String(today.getMonth() + 1).padStart(2, '0');
   const day = String(today.getDate()).padStart(2, '0');
   const todayStr = `${year}-${month}-${day}`; // Pure Local Date String
+=======
+import { Link } from "react-router-dom";
+import { Icon, Icons } from "../components/ui/Icon";
+import ProgressBar from "../components/ui/ProgressBar";
+import Badge from "../components/ui/Badge"; // BRINGING BACK THE BADGES!
+import { supabase } from "../lib/supabase";
+import { useAuth } from "../contexts/AuthContext";
+
+export default function Dashboard() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+
+  // Master Data State
+  const [data, setData] = useState({
+    tasks: [], attendance: [], expenses: [], habits: [], settings: {}
+  });
+
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   const currentDayName = today.toLocaleDateString('en-US', { weekday: 'short' });
 
   // ─── FETCH ALL DATA ───
   useEffect(() => {
     const fetchDashboardData = async () => {
+<<<<<<< HEAD
       if (!user) return;
       
       setLoading(true);
@@ -78,6 +100,28 @@ export default function Dashboard() {
 
     fetchDashboardData();
   }, [user, navigate]);
+=======
+      setLoading(true);
+      const [
+        { data: tData }, { data: attData }, { data: eData }, { data: hData }, { data: sData }
+      ] = await Promise.all([
+        supabase.from('tasks').select('*').order('due', { ascending: true }), // Order by due date!
+        supabase.from('attendance').select('*'),
+        supabase.from('expenses').select('*'),
+        supabase.from('habits').select('*').order('created_at', { ascending: true }),
+        supabase.from('user_settings').select('*').eq('user_id', user.id).single()
+      ]);
+
+      setData({
+        tasks: tData || [], attendance: attData || [], expenses: eData || [], habits: hData || [],
+        settings: sData || { monthly_budget: 7000 }
+      });
+      setLoading(false);
+    };
+
+    fetchDashboardData();
+  }, [user]);
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
 
   // ─── QUICK ACTIONS ───
   const toggleHabit = async (habit) => {
@@ -87,6 +131,7 @@ export default function Dashboard() {
 
     if (isDoneToday) {
       newStreak = Math.max(0, habit.streak - 1);
+<<<<<<< HEAD
       newLastCompleted = newStreak > 0 ? yesterdayStr : null;
     } else {
       // Local timezone fix for yesterday too!
@@ -97,10 +142,17 @@ export default function Dashboard() {
       const yDay = String(yesterday.getDate()).padStart(2, '0');
       const yesterdayStr = `${yYear}-${yMonth}-${yDay}`;
       
+=======
+      newLastCompleted = null;
+    } else {
+      const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       newStreak = (habit.last_completed === yesterdayStr) ? newStreak + 1 : 1;
       newLastCompleted = todayStr;
     }
 
+<<<<<<< HEAD
     // Only update the habits state (Prevents the whole dashboard from re-rendering!)
     setHabits(prev => prev.map(h => h.id === habit.id ? { ...h, streak: newStreak, last_completed: newLastCompleted } : h));
     await supabase.from('habits').update({ streak: newStreak, last_completed: newLastCompleted }).eq('id', habit.id).eq('user_id', user.id);
@@ -110,6 +162,15 @@ export default function Dashboard() {
     // Only update tasks state
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: "completed", progress: 100 } : t));
     await supabase.from('tasks').update({ status: "completed", progress: 100 }).eq('id', id).eq('user_id', user.id);
+=======
+    setData(prev => ({ ...prev, habits: prev.habits.map(h => h.id === habit.id ? { ...h, streak: newStreak, last_completed: newLastCompleted } : h) }));
+    await supabase.from('habits').update({ streak: newStreak, last_completed: newLastCompleted }).eq('id', habit.id);
+  };
+
+  const markTaskDone = async (id) => {
+    setData(prev => ({ ...prev, tasks: prev.tasks.map(t => t.id === id ? { ...t, status: "completed", progress: 100 } : t) }));
+    await supabase.from('tasks').update({ status: "completed", progress: 100 }).eq('id', id);
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   };
 
   // ─── DYNAMIC CALCULATIONS ───
@@ -117,15 +178,23 @@ export default function Dashboard() {
     const hour = today.getHours();
     const greeting = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
 
+<<<<<<< HEAD
     const classesToday = attendance.filter(c => c.days && c.days.includes(currentDayName));
     
     const pendingTasks = tasks.filter(t => t.status !== "completed");
+=======
+    const classesToday = data.attendance.filter(c => c.days && c.days.includes(currentDayName));
+    
+    // Sort urgent tasks: High priority first, then pending, then in-progress
+    const pendingTasks = data.tasks.filter(t => t.status !== "completed");
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     const urgentTasks = pendingTasks.sort((a, b) => {
       if (a.priority === 'high' && b.priority !== 'high') return -1;
       if (a.priority !== 'high' && b.priority === 'high') return 1;
       return 0;
     }).slice(0, 4);
 
+<<<<<<< HEAD
     const habitsLeft = habits.filter(h => h.last_completed !== todayStr).length;
 
     const currentMonth = today.getMonth();
@@ -148,6 +217,19 @@ export default function Dashboard() {
       </div>
     );
   }
+=======
+    const habitsLeft = data.habits.filter(h => h.last_completed !== todayStr).length;
+
+    const currentMonth = today.getMonth();
+    const currentYear = today.getFullYear();
+    const monthlyExpenses = data.expenses.filter(e => new Date(e.date).getMonth() === currentMonth && new Date(e.date).getFullYear() === currentYear);
+    const spentThisMonth = monthlyExpenses.reduce((acc, e) => acc + Number(e.amount), 0);
+    const spentToday = data.expenses.filter(e => e.date === todayStr).reduce((acc, e) => acc + Number(e.amount), 0);
+    const budgetRemaining = Math.max(0, (data.settings.monthly_budget || 7000) - spentThisMonth);
+
+    return { greeting, classesToday, pendingTasks, urgentTasks, habitsLeft, spentToday, budgetRemaining };
+  }, [data, todayStr, currentDayName, today]);
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
 
   if (loading) {
     return <div className="flex h-[80vh] items-center justify-center text-white/40"><div className="w-6 h-6 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin mr-3" /> Booting Command Center...</div>;
@@ -180,7 +262,11 @@ export default function Dashboard() {
       {/* ─── BENTO BOX GRID ─── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         
+<<<<<<< HEAD
         {/* 1. URGENT ASSIGNMENTS */}
+=======
+        {/* 1. URGENT ASSIGNMENTS (Restored Rich UI) */}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
         <div className="lg:col-span-1 bg-white/5 border border-white/10 rounded-3xl p-6 flex flex-col h-[400px]">
           <div className="flex justify-between items-center mb-5">
             <div className="flex items-center gap-2">
@@ -219,6 +305,10 @@ export default function Dashboard() {
                       </div>
                     </div>
                   </div>
+<<<<<<< HEAD
+=======
+                  {/* RESTORED BADGES */}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
                   <div className="flex gap-2 ml-9">
                     <Badge color={task.priority}>{task.priority}</Badge>
                     <Badge color={task.status}>{task.status.replace('-', ' ')}</Badge>
@@ -229,7 +319,11 @@ export default function Dashboard() {
           </div>
         </div>
 
+<<<<<<< HEAD
         {/* 2. TODAY'S SCHEDULE */}
+=======
+        {/* 2. TODAY'S SCHEDULE (Restored Rich UI) */}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
         <div className="lg:col-span-1 bg-white/5 border border-white/10 rounded-3xl p-6 flex flex-col h-[400px]">
           <div className="flex justify-between items-center mb-5">
             <div className="flex items-center gap-2">
@@ -259,6 +353,10 @@ export default function Dashboard() {
                       </div>
                       <div className="text-right shrink-0">
                         <div className={`text-[18px] font-extrabold leading-none ${isSafe ? 'text-green-400' : 'text-red-400'}`}>{pct}%</div>
+<<<<<<< HEAD
+=======
+                        {/* RESTORED STATUS BADGES FOR ATTENDANCE */}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
                         <div className="mt-1.5 flex justify-end">
                           <Badge color={isSafe ? "completed" : "overdue"}>{isSafe ? "Safe" : "Warning"}</Badge>
                         </div>
@@ -278,7 +376,11 @@ export default function Dashboard() {
         {/* 3. RIGHT COLUMN (Habits + Finance Mini-Widgets) */}
         <div className="lg:col-span-1 flex flex-col gap-6 h-[400px]">
           
+<<<<<<< HEAD
           {/* Daily Habits Checklist */}
+=======
+          {/* Daily Habits Checklist (Restored Rich UI) */}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
           <div className="bg-white/5 border border-white/10 rounded-3xl p-6 flex-1 flex flex-col min-h-0">
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2">
@@ -288,10 +390,17 @@ export default function Dashboard() {
             </div>
             
             <div className="flex-1 overflow-y-auto pr-2 -mr-2 flex flex-col gap-3">
+<<<<<<< HEAD
               {habits.length === 0 ? (
                 <div className="text-[12px] text-white/40 text-center py-4 border border-dashed border-white/5 rounded-xl">No habits set up yet.</div>
               ) : (
                 habits.map(habit => {
+=======
+              {data.habits.length === 0 ? (
+                <div className="text-[12px] text-white/40 text-center py-4 border border-dashed border-white/5 rounded-xl">No habits set up yet.</div>
+              ) : (
+                data.habits.map(habit => {
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
                   const isDone = habit.last_completed === todayStr;
                   return (
                     <div key={habit.id} className="flex items-center justify-between bg-[#0d0d14] border border-white/5 p-3 rounded-xl hover:border-white/20 transition-colors group shadow-md">
@@ -299,6 +408,10 @@ export default function Dashboard() {
                         <span className="text-2xl shrink-0 bg-white/5 w-10 h-10 flex items-center justify-center rounded-lg">{habit.icon}</span>
                         <div className="min-w-0">
                           <div className={`text-[13px] font-bold truncate transition-colors ${isDone ? 'text-white/30 line-through' : 'text-slate-200'}`}>{habit.name}</div>
+<<<<<<< HEAD
+=======
+                          {/* RESTORED STREAK UI */}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
                           <div className="text-[10px] font-bold text-orange-400 mt-0.5">🔥 {habit.streak} Streak</div>
                         </div>
                       </div>

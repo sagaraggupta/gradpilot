@@ -11,6 +11,7 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     // Check for an existing session when the app loads
+<<<<<<< HEAD
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
         setUser(session?.user ?? null);
@@ -24,6 +25,12 @@ export const AuthProvider = ({ children }) => {
         // ALWAYS finish loading, whether it succeeded or failed
         setLoading(false);
       });
+=======
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
 
     // Listen for login/logout events
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {

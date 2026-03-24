@@ -9,7 +9,11 @@ import { processActivityXP } from "../lib/streakEngine";
 
 export default function Assignments() {
   const { user } = useAuth();
+<<<<<<< HEAD
   const [view, setView] = useState("list"); 
+=======
+  const [view, setView] = useState("list"); // 'list' or 'kanban'
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   const [filter, setFilter] = useState("all");
   const [assignments, setAssignments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -55,8 +59,12 @@ export default function Assignments() {
   const fetchData = async () => {
     setLoading(true);
     const [ { data: tasksData }, { data: attData } ] = await Promise.all([
+<<<<<<< HEAD
       // 🔒 FIX: Scoped query to stop homework data leaks
       supabase.from('tasks').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+=======
+      supabase.from('tasks').select('*').order('created_at', { ascending: false }),
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       supabase.from('attendance').select('subject').eq('user_id', user.id)
     ]);
     
@@ -69,6 +77,10 @@ export default function Assignments() {
     setLoading(false);
   };
 
+<<<<<<< HEAD
+=======
+  // FIX 1: Toast Bug - Uses standard 'message' variable
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   const showToast = (message, type = "success") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
@@ -199,6 +211,7 @@ export default function Assignments() {
       const endStr = end.toISOString().split('T')[0].replace(/-/g, '');
       dates = `${startStr}/${endStr}`;
     } else {
+<<<<<<< HEAD
       // 📅 FIX: Force Strict UTC string format (YYYYMMDDTHHMMSSZ) so G-Cal locks the timezone correctly
       const startStr = dueDate.toISOString().replace(/-|:|\.\d{3}/g, "");
       const end = new Date(dueDate.getTime() + 60 * 60 * 1000);
@@ -206,12 +219,24 @@ export default function Assignments() {
       dates = `${startStr}/${endStr}`;
     }
     
+=======
+      const startStr = dueDate.toISOString().replace(/-|:|\.\d\d\d/g, "");
+      const end = new Date(dueDate.getTime() + 60 * 60 * 1000); 
+      const endStr = end.toISOString().replace(/-|:|\.\d\d\d/g, "");
+      dates = `${startStr}/${endStr}`;
+    }
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     window.open(`${baseUrl}&text=${title}&details=${details}&dates=${dates}`, '_blank');
     showToast("Opening Google Calendar...");
   };
 
+<<<<<<< HEAD
   // 🤖 FIX: Actual dynamic AI Flashcards via Supabase Edge Function!
   const startStudySession = async (task) => {
+=======
+  // FIX 3: AI Flashcard Generator (Upgraded to use dynamic titles and more subjects)
+  const startStudySession = (task) => {
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     setActiveStudyTask(task);
     setIsFlashcardModalOpen(true);
     setIsGenerating(true);
@@ -219,6 +244,7 @@ export default function Assignments() {
     setCurrentCardIndex(0);
     setIsFlipped(false);
 
+<<<<<<< HEAD
     try {
       const prompt = `Generate 5 unique flashcards for studying the academic assignment: "${task.title}" for the subject "${task.subject || 'General'}". Return ONLY a pure JSON array of objects. Structure: [{"front": "Question?", "back": "Answer"}]`;
       
@@ -256,6 +282,60 @@ export default function Assignments() {
 
   if (loading) return <div className="flex h-[80vh] items-center justify-center text-white/40"><div className="w-6 h-6 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin mr-3" /> Fetching Assignments...</div>;
 
+=======
+    setTimeout(() => {
+      const subject = (task.subject || "").toLowerCase();
+      const title = task.title || "this topic";
+      let generatedDeck = [];
+
+      if (subject.includes('phys')) {
+        generatedDeck = [
+          { front: `What physical principles apply to "${title}"?`, back: "It generally involves the interaction of force, mass, and energy conservation." },
+          { front: "What is Newton's Second Law?", back: "Force equals mass times acceleration (F = ma)." },
+          { front: "Define Thermodynamics.", back: "The branch of physics that deals with heat and other forms of energy." }
+        ];
+      } else if (subject.includes('math') || subject.includes('calc')) {
+        generatedDeck = [
+          { front: `What mathematical formulas are required for "${title}"?`, back: "You will primarily need algebraic manipulation and calculus theorems." },
+          { front: "What is the derivative of x²?", back: "2x" },
+          { front: "State the Pythagorean Theorem.", back: "a² + b² = c²" }
+        ];
+      } else if (subject.includes('comp') || subject.includes('code')) {
+        generatedDeck = [
+          { front: `What is the optimal algorithm used in "${title}"?`, back: "Usually, a sorting or searching algorithm (like QuickSort or Binary Search) is optimal." },
+          { front: "What is the time complexity of a standard loop?", back: "O(N) - Linear Time." },
+          { front: "Define 'Recursion'.", back: "A function that calls itself until it reaches a base case." }
+        ];
+      } else if (subject.includes('bio')) {
+         generatedDeck = [
+          { front: `What biological systems are involved in "${title}"?`, back: "Cellular respiration, genetic mutation, and metabolic pathways." },
+          { front: "What is the powerhouse of the cell?", back: "The Mitochondria." },
+          { front: "Define 'Photosynthesis'.", back: "The process by which plants convert sunlight into chemical energy." }
+        ];
+      } else {
+        // Dynamic fallback utilizing the user's specific Task Name and Subject
+        generatedDeck = [
+          { front: `Summarize the main objective of "${title}".`, back: `The primary goal is to deeply analyze the concepts of ${task.subject} and demonstrate mastery of the material.` },
+          { front: `What are 3 key terms to remember for "${title}"?`, back: `1. Core Principle\n2. Primary Methodology\n3. ${task.subject} Theory` },
+          { front: `What is the most common mistake students make on "${title}"?`, back: `Forgetting to cite sources properly and skipping the foundational review of ${task.subject} concepts.` },
+          { front: `How does "${title}" apply to the real world?`, back: `It develops critical thinking and directly applies to professional problem-solving in the field of ${task.subject}.` }
+        ];
+      }
+      
+      setFlashcards(generatedDeck);
+      setIsGenerating(false);
+    }, 2500); 
+  };
+
+  const nextCard = () => { setIsFlipped(false); setTimeout(() => { if (currentCardIndex < flashcards.length - 1) setCurrentCardIndex(prev => prev + 1); }, 150); };
+  const prevCard = () => { setIsFlipped(false); setTimeout(() => { if (currentCardIndex > 0) setCurrentCardIndex(prev => prev - 1); }, 150); };
+  const completeStudySession = async () => {
+    setIsFlashcardModalOpen(false);
+    await processActivityXP(user.id, 30, 0); 
+    showToast(`Study Session Complete! +30 XP Earned 🧠`);
+  };
+
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   const filtered = filter === "all" ? assignments : assignments.filter(a => a.status === filter);
 
   return (

@@ -11,15 +11,23 @@ export default function Timer() {
   const [configs, setConfigs] = useState({ pomodoro: 25, shortBreak: 5, longBreak: 15, deepWork: 90 });
   const [mode, setMode] = useState("pomodoro");
   const [running, setRunning] = useState(false);
+<<<<<<< HEAD
   
   const [seconds, setSeconds] = useState(configs.pomodoro * 60);
   const [targetTime, setTargetTime] = useState(null);
+=======
+  const [seconds, setSeconds] = useState(configs.pomodoro * 60);
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   
   const [pendingTasks, setPendingTasks] = useState([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [profile, setProfile] = useState(null);
   
   const [showCompletionModal, setShowCompletionModal] = useState(false);
+<<<<<<< HEAD
+=======
+  // NEW: State to track the selected mood before submitting
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   const [sessionMood, setSessionMood] = useState(null); 
   
   const [toast, setToast] = useState(null);
@@ -50,6 +58,7 @@ export default function Timer() {
 
   useEffect(() => {
     let interval = null;
+<<<<<<< HEAD
     if (running && targetTime) {
       interval = setInterval(() => {
         const remaining = Math.round((targetTime - Date.now()) / 1000);
@@ -66,11 +75,21 @@ export default function Timer() {
     }
     return () => clearInterval(interval);
   }, [running, targetTime]);
+=======
+    if (running && seconds > 0) {
+      interval = setInterval(() => setSeconds(s => s - 1), 1000);
+    } else if (running && seconds === 0) {
+      handleSessionComplete();
+    }
+    return () => clearInterval(interval);
+  }, [running, seconds]);
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
 
   useEffect(() => {
     if (!running) setSeconds(configs[mode] * 60);
   }, [configs, mode]);
 
+<<<<<<< HEAD
   const toggleTimer = () => {
     if (running) {
       setRunning(false);
@@ -115,16 +134,35 @@ export default function Timer() {
       setSessionMood(null); 
       setShowCompletionModal(true); 
     } else {
+=======
+  const switchMode = (m) => { setMode(m); setRunning(false); setSeconds(configs[m] * 60); };
+
+  // ─── MODAL TRIGGER ───
+  const handleSessionComplete = async () => {
+    setRunning(false);
+    
+    // Only show modal and award XP for actual work sessions (not breaks)
+    if (mode === "pomodoro" || mode === "deepWork") {
+      setSessionMood(null); // Reset mood for the new modal
+      setShowCompletionModal(true); // Open the mood/task completion modal
+    } else {
+      // Auto-switch back to work after a break
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       switchMode("pomodoro");
     }
   };
 
+<<<<<<< HEAD
+=======
+  // ─── NEW: SAVE SESSION DATA ───
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   const submitSession = async (isTaskCompleted) => {
     if (!sessionMood) {
       alert("Please select how you felt during the session!");
       return;
     }
 
+<<<<<<< HEAD
     try {
       const activeTask = pendingTasks.find(t => t.id === selectedTaskId);
       const subjectToLog = activeTask ? activeTask.subject : "General";
@@ -166,6 +204,48 @@ export default function Timer() {
   // ─── BUG FIX: PREVENT DOUBLE RENDER ON ENTER + BLUR ───
   const handleTimeEdit = (newMinutes) => {
     if (!isEditingTime) return; // Prevent double execution
+=======
+    const activeTask = pendingTasks.find(t => t.id === selectedTaskId);
+    const subjectToLog = activeTask ? activeTask.subject : "General";
+
+    // 1. Log the session to our new table for the AI
+    await supabase.from('study_sessions').insert([{
+      user_id: user.id,
+      task_id: selectedTaskId || null,
+      subject: subjectToLog,
+      duration_minutes: configs[mode],
+      mood: sessionMood
+    }]);
+
+    // 2. Add Base XP for Focus Time (20 XP)
+    const res = await processActivityXP(user.id, 20, configs[mode]);
+    
+    // 3. If they finished a task, complete it and add Bonus XP (50 XP)
+    if (isTaskCompleted && selectedTaskId) {
+      await supabase.from('tasks').update({ status: 'completed', progress: 100, completed_at: new Date().toISOString() }).eq('id', selectedTaskId);
+      const taskRes = await processActivityXP(user.id, 50, 0); // Bonus 50
+      
+      setProfile({ ...profile, total_xp: taskRes.newXp, current_streak: taskRes.newStreak, focus_minutes_today: res.newFocus, sessions_today: res.newSessions });
+      setPendingTasks(prev => prev.filter(t => t.id !== selectedTaskId));
+      setSelectedTaskId("");
+      showToastMessage(taskRes?.streakExtendedToday ? `Task complete! Streak extended! 🔥` : "Task completed! +70 XP Total");
+    } else {
+      setProfile({ ...profile, total_xp: res.newXp, current_streak: res.newStreak, focus_minutes_today: res.newFocus, sessions_today: res.newSessions });
+      showToastMessage(res?.streakExtendedToday ? `+20 XP! Streak extended to ${res.newStreak} days! 🔥` : "+20 XP for focusing!");
+    }
+
+    setFocusMinutes(res.newFocus);
+    setSessionsToday(res.newSessions);
+    setShowCompletionModal(false);
+    switchMode("shortBreak"); 
+  };
+
+
+  const handleSkip = () => { setRunning(false); switchMode(mode === "pomodoro" ? "shortBreak" : "pomodoro"); };
+  const handleRestart = () => { setRunning(false); setSeconds(configs[mode] * 60); };
+
+  const handleTimeEdit = (newMinutes) => {
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     setIsEditingTime(false);
     const mins = Math.max(1, parseInt(newMinutes) || configs[mode]);
     setConfigs(prev => ({ ...prev, [mode]: mins }));
@@ -223,8 +303,13 @@ export default function Timer() {
 
       <div className="flex items-center gap-6 mt-2">
         <button onClick={handleRestart} className="w-12 h-12 rounded-xl border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors text-lg flex items-center justify-center group" title="Restart Timer"><span className="group-active:-rotate-90 transition-transform">↺</span></button>
+<<<<<<< HEAD
         <button onClick={toggleTimer} className="w-[80px] h-[80px] rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-3xl flex items-center justify-center shadow-[0_10px_20px_rgba(99,102,241,0.3)] hover:opacity-90 hover:scale-105 active:scale-95 transition-all"><Icon d={running ? Icons.pause : Icons.play} size={32} className={running ? "" : "ml-1"} /></button>
         <button onClick={handleSkip} className="w-12 h-12 rounded-xl border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors text-lg flex items-center justify-center group" title="Skip to next session"><Icon d={Icons.skip} size={20} className="group-active:translate-x-1 transition-transform" /></button>
+=======
+        <button onClick={() => setRunning(r => !r)} className="w-[80px] h-[80px] rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-3xl flex items-center justify-center shadow-[0_10px_20px_rgba(99,102,241,0.3)] hover:opacity-90 hover:scale-105 active:scale-95 transition-all">{running ? "⏸" : "▶"}</button>
+        <button onClick={handleSkip} className="w-12 h-12 rounded-xl border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors text-lg flex items-center justify-center group" title="Skip to next session"><span className="group-active:translate-x-1 transition-transform">⏭</span></button>
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-[650px] mt-6">
@@ -242,9 +327,17 @@ export default function Timer() {
         ))}
       </div>
 
+<<<<<<< HEAD
       <Modal isOpen={showCompletionModal} onClose={() => { setShowCompletionModal(false); switchMode("shortBreak"); }} title="Focus Session Complete!">
         <div className="flex flex-col items-center text-center gap-5 py-2">
           
+=======
+      {/* ─── UPGRADED: MOOD & COMPLETION MODAL ─── */}
+      <Modal isOpen={showCompletionModal} onClose={() => { setShowCompletionModal(false); switchMode("shortBreak"); }} title="Focus Session Complete!">
+        <div className="flex flex-col items-center text-center gap-5 py-2">
+          
+          {/* Mood Selector */}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
           <div className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl">
             <h3 className="text-[14px] font-bold text-slate-100 mb-3">How did this session feel?</h3>
             <div className="flex gap-3 justify-center">
@@ -266,6 +359,10 @@ export default function Timer() {
             </div>
           </div>
 
+<<<<<<< HEAD
+=======
+          {/* Task Completion Check (Only if a task was selected) */}
+>>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
           {activeTask ? (
             <div className="w-full mt-2">
               <p className="text-[13px] text-white/60 mb-4">
