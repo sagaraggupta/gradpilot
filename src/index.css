@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+body {
+  font-family: 'Plus Jakarta Sans', sans-serif !important;
+  background-color: #0d0d14;
+  color: #f1f5f9;
+}
+
+/* OVERRIDE THE SORA FONT WE USED EARLIER */
+.font-\[\'Sora\'\] {
+  font-family: 'Plus Jakarta Sans', sans-serif !important;
+}
+
+@layer base {
+  button {
+    @apply cursor-pointer;
+  }
+}
+/* Themes for Animations */
+@theme {
+  /* Existing border spin */
+  --animate-border-spin: border-spin 3s linear infinite;
+
+  /* Add the Slow Spin for the Chakra */
+  --animate-spin-slow: spin-slow 8s linear infinite;
+
+  @keyframes border-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  
+}
+
+/* --- GLOBAL AUTO-HIDE MODULAR SCROLLBAR --- */
+
+/* 1. Set the area width */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+/* 2. Track stays transparent */
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 3. The "Module" (Thumb) - Invisible by default */
+::-webkit-scrollbar-thumb {
+  background-color: transparent; 
+  border-radius: 20px;
+  border: 3px solid transparent; /* Keeps layout stable */
+  background-clip: content-box;
+  transition: background-color 0.3s ease;
+}
+
+/* 4. Show the thumb ONLY when the user hovers over the page */
+html:hover ::-webkit-scrollbar-thumb {
+  background-color: #334155; /* Subtle slate */
+  border: 3px solid #0d0d14; /* Your body background color */
+}
+
+/* 5. Change to orange when dragging or hovering the thumb specifically */
+::-webkit-scrollbar-thumb:hover {
+  background-color: #fb923c !important; /* Your brand orange */
+}
+
+/* Firefox support */
+html {
+  scrollbar-width: none; /* Hidden by default */
+}
+
+html:hover {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
