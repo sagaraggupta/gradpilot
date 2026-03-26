@@ -21,6 +21,10 @@ export default function Leaderboard() {
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
+    document.title = "Leaderboard | GradPilot";
+  }, []);
+
+  useEffect(() => {
     fetchLeaderboardData();
   }, [user]);
 

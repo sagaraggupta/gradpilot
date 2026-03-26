@@ -66,6 +66,10 @@ export default function Goals() {
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayStr = getLocalDateString(yesterday);
 
+  useEffect(() => {
+      document.title = "Goals & XP | GradPilot";
+    }, []);
+
   // ─── GLOBAL THEME INJECTION ───
   useEffect(() => {
     if (userSettings?.active_theme) {

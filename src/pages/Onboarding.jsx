@@ -21,6 +21,10 @@ export default function Onboarding() {
   };
 
   useEffect(() => {
+    document.title = "Profile Setting | GradPilot";
+  }, []);
+
+  useEffect(() => {
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       

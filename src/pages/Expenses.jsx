@@ -57,6 +57,10 @@ export default function Expenses() {
   });
 
   useEffect(() => {
+      document.title = "Expenses | GradPilot";
+    }, []);
+
+  useEffect(() => {
     fetchData();
   }, [user]);
 

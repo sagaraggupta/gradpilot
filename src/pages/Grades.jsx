@@ -37,6 +37,10 @@ export default function Grades() {
     grade: "A"
   });
 
+  useEffect(() => {
+    document.title = "Grades | GradPilot";
+  }, []);
+
   // ─── FETCH DATA ───
   useEffect(() => {
     fetchGrades();

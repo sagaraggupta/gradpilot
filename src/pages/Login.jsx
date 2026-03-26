@@ -12,6 +12,10 @@ export default function Auth() {
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    document.title = "User Login | GradPilot";
+  }, []);
+
   // Smart Redirect: Check if they are actually onboarded first!
   useEffect(() => {
     const checkUser = async () => {

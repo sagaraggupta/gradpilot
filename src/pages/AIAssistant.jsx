@@ -32,6 +32,10 @@ export default function AIAssistant() {
   const [profile, setProfile] = useState(null);
   const [expenses, setExpenses] = useState([]);
 
+  useEffect(() => {
+      document.title = "Ai Assitant | GradPilot";
+    }, []);
+
   // Chat State (with 24-hour LocalStorage memory)
   const [messages, setMessages] = useState(() => {
     const savedChat = localStorage.getItem('gradpilot_ai_chat');

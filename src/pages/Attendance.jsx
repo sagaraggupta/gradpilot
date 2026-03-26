@@ -24,6 +24,10 @@ export default function Attendance() {
 
   const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
+  useEffect(() => {
+      document.title = "Attendance | GradPilot";
+    }, []);
+
   // ─── FETCH DATA ───────────────────────────────────────────────────────────
   useEffect(() => {
     fetchAttendance();

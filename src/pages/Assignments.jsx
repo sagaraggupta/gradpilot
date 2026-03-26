@@ -32,6 +32,10 @@ export default function Assignments() {
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
 
+  useEffect(() => {
+      document.title = "Assignments | GradPilot";
+    }, []);
+
   const priorityConfig = {
     low: { label: "Low", colorClass: "bg-emerald-500/20 border-emerald-500/50 text-emerald-400" },
     medium: { label: "Medium", colorClass: "bg-amber-500/20 border-amber-500/50 text-amber-400" },

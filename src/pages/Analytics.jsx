@@ -17,6 +17,10 @@ export default function Analytics() {
   });
 
   useEffect(() => {
+      document.title = "Analytics | GradPilot";
+    }, []);
+
+  useEffect(() => {
     const fetchAllData = async () => {
       if (!user) return;
       setLoading(true);

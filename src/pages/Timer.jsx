@@ -35,7 +35,7 @@ export default function Timer() {
     if (running) {
       document.title = `${mins}:${secs} - Focus | GradPilot`;
     } else {
-      document.title = "GradPilot";
+      document.title = "Focus Timer | GradPilot";
     }
   }, [seconds, running]);
 
