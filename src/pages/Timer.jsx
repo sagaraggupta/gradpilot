@@ -11,23 +11,15 @@ export default function Timer() {
   const [configs, setConfigs] = useState({ pomodoro: 25, shortBreak: 5, longBreak: 15, deepWork: 90 });
   const [mode, setMode] = useState("pomodoro");
   const [running, setRunning] = useState(false);
-<<<<<<< HEAD
   
   const [seconds, setSeconds] = useState(configs.pomodoro * 60);
   const [targetTime, setTargetTime] = useState(null);
-=======
-  const [seconds, setSeconds] = useState(configs.pomodoro * 60);
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   
   const [pendingTasks, setPendingTasks] = useState([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [profile, setProfile] = useState(null);
   
   const [showCompletionModal, setShowCompletionModal] = useState(false);
-<<<<<<< HEAD
-=======
-  // NEW: State to track the selected mood before submitting
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   const [sessionMood, setSessionMood] = useState(null); 
   
   const [toast, setToast] = useState(null);
@@ -35,6 +27,17 @@ export default function Timer() {
   
   const [sessionsToday, setSessionsToday] = useState(0);
   const [focusMinutes, setFocusMinutes] = useState(0);
+
+  // 🚀 MAGIC 1: Update the Browser Tab Title with the countdown!
+  useEffect(() => {
+    const mins = String(Math.floor(seconds / 60)).padStart(2, "0");
+    const secs = String(seconds % 60).padStart(2, "0");
+    if (running) {
+      document.title = `${mins}:${secs} - Focus | GradPilot`;
+    } else {
+      document.title = "GradPilot";
+    }
+  }, [seconds, running]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -58,16 +61,14 @@ export default function Timer() {
 
   useEffect(() => {
     let interval = null;
-<<<<<<< HEAD
     if (running && targetTime) {
       interval = setInterval(() => {
+        // By calculating from Date.now(), we bypass browser throttling freezing the time!
         const remaining = Math.round((targetTime - Date.now()) / 1000);
         
         if (remaining <= 0) {
           setSeconds(0);
-          setRunning(false);
-          setTargetTime(null);
-          handleSessionComplete();
+          handleSessionComplete(); // Trigger completion
         } else {
           setSeconds(remaining);
         }
@@ -75,26 +76,20 @@ export default function Timer() {
     }
     return () => clearInterval(interval);
   }, [running, targetTime]);
-=======
-    if (running && seconds > 0) {
-      interval = setInterval(() => setSeconds(s => s - 1), 1000);
-    } else if (running && seconds === 0) {
-      handleSessionComplete();
-    }
-    return () => clearInterval(interval);
-  }, [running, seconds]);
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
 
   useEffect(() => {
     if (!running) setSeconds(configs[mode] * 60);
   }, [configs, mode]);
 
-<<<<<<< HEAD
   const toggleTimer = () => {
     if (running) {
       setRunning(false);
       setTargetTime(null);
     } else {
+      // 🚀 MAGIC 2: Ask permission to send Desktop Notifications the first time they click play
+      if (Notification.permission === "default") {
+        Notification.requestPermission();
+      }
       setTargetTime(Date.now() + (seconds * 1000));
       setRunning(true);
     }
@@ -123,75 +118,86 @@ export default function Timer() {
     setRunning(false);
     setTargetTime(null);
 
+    // 1. Try to play audio (Might be blocked if tab is hidden)
     try {
       const chime = new Audio('/chime.mp3'); 
-      chime.play().catch(e => console.log("Audio play blocked by browser:", e));
-    } catch (e) {
-       console.log("Audio not supported");
+      chime.play().catch(e => console.log("Audio blocked by browser"));
+    } catch (e) { }
+
+    // 🚀 MAGIC 3: Fire a Native Desktop Notification! (This works even if minimized!)
+    if (Notification.permission === "granted") {
+      new Notification(mode === "pomodoro" || mode === "deepWork" ? "Focus Session Complete!" : "Break is over!", {
+        body: mode === "pomodoro" || mode === "deepWork" ? "Great job! Click here to log your session." : "Time to get back to work!",
+        icon: "/pwa-192x192.png"
+      });
     }
     
     if (mode === "pomodoro" || mode === "deepWork") {
       setSessionMood(null); 
       setShowCompletionModal(true); 
     } else {
-=======
-  const switchMode = (m) => { setMode(m); setRunning(false); setSeconds(configs[m] * 60); };
-
-  // ─── MODAL TRIGGER ───
-  const handleSessionComplete = async () => {
-    setRunning(false);
-    
-    // Only show modal and award XP for actual work sessions (not breaks)
-    if (mode === "pomodoro" || mode === "deepWork") {
-      setSessionMood(null); // Reset mood for the new modal
-      setShowCompletionModal(true); // Open the mood/task completion modal
-    } else {
-      // Auto-switch back to work after a break
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       switchMode("pomodoro");
     }
   };
 
-<<<<<<< HEAD
-=======
-  // ─── NEW: SAVE SESSION DATA ───
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   const submitSession = async (isTaskCompleted) => {
     if (!sessionMood) {
       alert("Please select how you felt during the session!");
       return;
     }
 
-<<<<<<< HEAD
     try {
       const activeTask = pendingTasks.find(t => t.id === selectedTaskId);
       const subjectToLog = activeTask ? activeTask.subject : "General";
 
+      // 1. Save Session
       await supabase.from('study_sessions').insert([{
-        user_id: user.id,
-        task_id: selectedTaskId || null,
-        subject: subjectToLog,
-        duration_minutes: configs[mode],
-        mood: sessionMood
+        user_id: user.id, task_id: selectedTaskId || null, subject: subjectToLog, duration_minutes: configs[mode], mood: sessionMood
       }]);
 
+      // 2. Process Standard XP
       const res = await processActivityXP(user.id, 20, configs[mode]);
+      let finalToastMessage = res?.streakExtendedToday ? `+20 XP! Streak extended to ${res.newStreak} days! 🔥` : "+20 XP for focusing!";
       
       if (isTaskCompleted && selectedTaskId) {
         await supabase.from('tasks').update({ status: 'completed', progress: 100, completed_at: new Date().toISOString() }).eq('id', selectedTaskId);
         const taskRes = await processActivityXP(user.id, 50, 0); 
-        
         setProfile({ ...profile, total_xp: taskRes.newXp, current_streak: taskRes.newStreak, focus_minutes_today: res.newFocus, sessions_today: res.newSessions });
         setPendingTasks(prev => prev.filter(t => t.id !== selectedTaskId));
         setSelectedTaskId("");
-        showToastMessage(taskRes?.streakExtendedToday ? `Task complete! Streak extended! 🔥` : "Task completed! +70 XP Total");
+        finalToastMessage = "Task completed! +70 XP Total 🎯";
       } else {
         setProfile({ ...profile, total_xp: res.newXp, current_streak: res.newStreak, focus_minutes_today: res.newFocus, sessions_today: res.newSessions });
-        showToastMessage(res?.streakExtendedToday ? `+20 XP! Streak extended to ${res.newStreak} days! 🔥` : "+20 XP for focusing!");
       }
 
       setFocusMinutes(res.newFocus);
       setSessionsToday(res.newSessions);
+
+      // 🚀 MAGIC 4: AUTO-VERIFY DAILY QUESTS!
+      const todayStr = new Date().toISOString().split('T')[0];
+      
+      // Check for Pomodoro Quest (If they hit 2 sessions today)
+      if (res.newSessions >= 2) {
+        const { data: pomoQuest } = await supabase.from('daily_quests').select('*')
+          .eq('user_id', user.id).eq('assigned_date', todayStr).eq('title', 'Complete 2 Pomodoro Sessions').eq('is_completed', false).maybeSingle();
+          
+        if (pomoQuest) {
+          await supabase.from('daily_quests').update({ is_completed: true }).eq('id', pomoQuest.id);
+          finalToastMessage = `Quest Complete! +${pomoQuest.xp_reward + 20} XP 🎉`;
+        }
+      }
+
+      // Check for Streak Quest (If they hit a 3-day streak)
+      if (res.newStreak >= 3) {
+        const { data: streakQuest } = await supabase.from('daily_quests').select('*')
+          .eq('user_id', user.id).eq('assigned_date', todayStr).eq('title', 'Achieve a 3-day focus streak').eq('is_completed', false).maybeSingle();
+          
+        if (streakQuest) {
+          await supabase.from('daily_quests').update({ is_completed: true }).eq('id', streakQuest.id);
+        }
+      }
+
+      showToastMessage(finalToastMessage);
       setShowCompletionModal(false);
       switchMode("shortBreak"); 
       
@@ -201,51 +207,8 @@ export default function Timer() {
     }
   };
 
-  // ─── BUG FIX: PREVENT DOUBLE RENDER ON ENTER + BLUR ───
   const handleTimeEdit = (newMinutes) => {
-    if (!isEditingTime) return; // Prevent double execution
-=======
-    const activeTask = pendingTasks.find(t => t.id === selectedTaskId);
-    const subjectToLog = activeTask ? activeTask.subject : "General";
-
-    // 1. Log the session to our new table for the AI
-    await supabase.from('study_sessions').insert([{
-      user_id: user.id,
-      task_id: selectedTaskId || null,
-      subject: subjectToLog,
-      duration_minutes: configs[mode],
-      mood: sessionMood
-    }]);
-
-    // 2. Add Base XP for Focus Time (20 XP)
-    const res = await processActivityXP(user.id, 20, configs[mode]);
-    
-    // 3. If they finished a task, complete it and add Bonus XP (50 XP)
-    if (isTaskCompleted && selectedTaskId) {
-      await supabase.from('tasks').update({ status: 'completed', progress: 100, completed_at: new Date().toISOString() }).eq('id', selectedTaskId);
-      const taskRes = await processActivityXP(user.id, 50, 0); // Bonus 50
-      
-      setProfile({ ...profile, total_xp: taskRes.newXp, current_streak: taskRes.newStreak, focus_minutes_today: res.newFocus, sessions_today: res.newSessions });
-      setPendingTasks(prev => prev.filter(t => t.id !== selectedTaskId));
-      setSelectedTaskId("");
-      showToastMessage(taskRes?.streakExtendedToday ? `Task complete! Streak extended! 🔥` : "Task completed! +70 XP Total");
-    } else {
-      setProfile({ ...profile, total_xp: res.newXp, current_streak: res.newStreak, focus_minutes_today: res.newFocus, sessions_today: res.newSessions });
-      showToastMessage(res?.streakExtendedToday ? `+20 XP! Streak extended to ${res.newStreak} days! 🔥` : "+20 XP for focusing!");
-    }
-
-    setFocusMinutes(res.newFocus);
-    setSessionsToday(res.newSessions);
-    setShowCompletionModal(false);
-    switchMode("shortBreak"); 
-  };
-
-
-  const handleSkip = () => { setRunning(false); switchMode(mode === "pomodoro" ? "shortBreak" : "pomodoro"); };
-  const handleRestart = () => { setRunning(false); setSeconds(configs[mode] * 60); };
-
-  const handleTimeEdit = (newMinutes) => {
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
+    if (!isEditingTime) return; 
     setIsEditingTime(false);
     const mins = Math.max(1, parseInt(newMinutes) || configs[mode]);
     setConfigs(prev => ({ ...prev, [mode]: mins }));
@@ -285,7 +248,7 @@ export default function Timer() {
           {isEditingTime ? (
             <input autoFocus type="number" defaultValue={configs[mode]} onBlur={(e) => handleTimeEdit(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleTimeEdit(e.target.value)} className="bg-[#0d0d14] border border-indigo-500/50 rounded-xl text-center text-[48px] font-extrabold text-indigo-400 font-['Plus_Jakarta_Sans'] w-32 outline-none" />
           ) : (
-            <div onClick={() => { if (!running) setIsEditingTime(true); }} className={`text-[56px] font-extrabold text-slate-100 font-['Plus_Jakarta_Sans'] tracking-tighter leading-none ${!running && 'cursor-pointer hover:text-indigo-300 transition-colors'}`} title={!running ? "Click to edit time" : ""}>
+            <div onClick={() => { if (!running) setIsEditingTime(true); }} className={`text-[56px] font-extrabold text-slate-100 font-['Plus_Jakarta_Sans'] tracking-tighter leading-none ${!running ? 'cursor-pointer hover:text-indigo-300 transition-colors' : ''}`} title={!running ? "Click to edit time" : ""}>
               {mins}:{secs}
             </div>
           )}
@@ -303,13 +266,8 @@ export default function Timer() {
 
       <div className="flex items-center gap-6 mt-2">
         <button onClick={handleRestart} className="w-12 h-12 rounded-xl border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors text-lg flex items-center justify-center group" title="Restart Timer"><span className="group-active:-rotate-90 transition-transform">↺</span></button>
-<<<<<<< HEAD
         <button onClick={toggleTimer} className="w-[80px] h-[80px] rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-3xl flex items-center justify-center shadow-[0_10px_20px_rgba(99,102,241,0.3)] hover:opacity-90 hover:scale-105 active:scale-95 transition-all"><Icon d={running ? Icons.pause : Icons.play} size={32} className={running ? "" : "ml-1"} /></button>
         <button onClick={handleSkip} className="w-12 h-12 rounded-xl border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors text-lg flex items-center justify-center group" title="Skip to next session"><Icon d={Icons.skip} size={20} className="group-active:translate-x-1 transition-transform" /></button>
-=======
-        <button onClick={() => setRunning(r => !r)} className="w-[80px] h-[80px] rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-3xl flex items-center justify-center shadow-[0_10px_20px_rgba(99,102,241,0.3)] hover:opacity-90 hover:scale-105 active:scale-95 transition-all">{running ? "⏸" : "▶"}</button>
-        <button onClick={handleSkip} className="w-12 h-12 rounded-xl border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors text-lg flex items-center justify-center group" title="Skip to next session"><span className="group-active:translate-x-1 transition-transform">⏭</span></button>
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-[650px] mt-6">
@@ -327,17 +285,9 @@ export default function Timer() {
         ))}
       </div>
 
-<<<<<<< HEAD
       <Modal isOpen={showCompletionModal} onClose={() => { setShowCompletionModal(false); switchMode("shortBreak"); }} title="Focus Session Complete!">
         <div className="flex flex-col items-center text-center gap-5 py-2">
           
-=======
-      {/* ─── UPGRADED: MOOD & COMPLETION MODAL ─── */}
-      <Modal isOpen={showCompletionModal} onClose={() => { setShowCompletionModal(false); switchMode("shortBreak"); }} title="Focus Session Complete!">
-        <div className="flex flex-col items-center text-center gap-5 py-2">
-          
-          {/* Mood Selector */}
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
           <div className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl">
             <h3 className="text-[14px] font-bold text-slate-100 mb-3">How did this session feel?</h3>
             <div className="flex gap-3 justify-center">
@@ -359,10 +309,6 @@ export default function Timer() {
             </div>
           </div>
 
-<<<<<<< HEAD
-=======
-          {/* Task Completion Check (Only if a task was selected) */}
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
           {activeTask ? (
             <div className="w-full mt-2">
               <p className="text-[13px] text-white/60 mb-4">

@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import React, { useState, useEffect } from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -58,20 +57,5 @@ export default function ProtectedRoute() {
   }
 
   // 3. Logged in WITH full profile? Let them into the Dashboard!
-=======
-import React from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
-
-export default function ProtectedRoute() {
-  const { user } = useAuth();
-
-  // If there is no user logged in, send them to the login page
-  if (!user) {
-    return <Navigate to="/" replace />;
-  }
-
-  // If they are logged in, render the child routes (the dashboard)
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   return <Outlet />;
 }

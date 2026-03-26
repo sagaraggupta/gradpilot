@@ -44,16 +44,12 @@ export default function Grades() {
 
   const fetchGrades = async () => {
     setLoading(true);
-<<<<<<< HEAD
     const { data, error } = await supabase
       .from('grades')
       .select('*')
       .eq('user_id', user.id) // 🔒 CRITICAL FIX: Scope the query!
       .order('created_at', { ascending: true });
       
-=======
-    const { data, error } = await supabase.from('grades').select('*').order('created_at', { ascending: true });
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     if (!error && data) {
       setGrades(data);
       const uniqueSems = [...new Set(data.map(g => g.semester))].sort();
@@ -97,12 +93,8 @@ export default function Grades() {
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this grade? This will recalculate your GPA.")) return;
     setGrades(prev => prev.filter(g => g.id !== id));
-<<<<<<< HEAD
     // 🛡️ FIX: Double-lock the delete query
     await supabase.from('grades').delete().eq('id', id).eq('user_id', user.id);
-=======
-    await supabase.from('grades').delete().eq('id', id);
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     showToast("Grade removed.");
   };
 

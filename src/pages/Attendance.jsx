@@ -31,7 +31,6 @@ export default function Attendance() {
 
   const fetchAttendance = async () => {
     setLoading(true);
-<<<<<<< HEAD
     const { data, error } = await supabase
       .from('attendance')
       .select('*')
@@ -39,10 +38,6 @@ export default function Attendance() {
       .order('created_at', { ascending: false });
 
     if (data) setSubjects(data);
-=======
-    const { data, error } = await supabase.from('attendance').select('*').order('created_at', { ascending: true });
-    if (!error) setSubjects(data || []);
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     setLoading(false);
   };
 
@@ -68,11 +63,7 @@ export default function Attendance() {
     const newPresent = type === 'present' ? subject.present + 1 : subject.present;
 
     setSubjects(prev => prev.map(s => s.id === id ? { ...s, total: newTotal, present: newPresent } : s));
-<<<<<<< HEAD
     await supabase.from('attendance').update({ total: newTotal, present: newPresent }).eq('id', id).eq('user_id', user.id);
-=======
-    await supabase.from('attendance').update({ total: newTotal, present: newPresent }).eq('id', id);
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     showToast(`Marked ${type} for ${subject.subject}`);
   };
 
@@ -135,10 +126,7 @@ export default function Attendance() {
         days: editSubject.days || []
       })
       .eq('id', editSubject.id)
-<<<<<<< HEAD
       .eq('user_id', user.id)
-=======
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       .select();
 
     if (!error && data) {
@@ -152,11 +140,7 @@ export default function Attendance() {
   const handleDeleteSubject = async (id) => {
     if (!window.confirm("Are you sure you want to delete this subject?")) return;
     setSubjects(prev => prev.filter(s => s.id !== id));
-<<<<<<< HEAD
     await supabase.from('attendance').delete().eq('id', id).eq('user_id', user.id);
-=======
-    await supabase.from('attendance').delete().eq('id', id);
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     setIsEditModalOpen(false);
     showToast("Subject deleted.");
   };

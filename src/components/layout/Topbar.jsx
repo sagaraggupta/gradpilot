@@ -35,15 +35,9 @@ export default function Topbar() {
   useEffect(() => {
     const fetchRealData = async () => {
       const [ { data: hData }, { data: gData }, { data: sData }, { data: pData }, { data: tData } ] = await Promise.all([
-<<<<<<< HEAD
         supabase.from('habits').select('streak').eq('user_id', user.id),
         supabase.from('goals').select('progress').eq('user_id', user.id),
         supabase.from('user_settings').select('xp_spent').eq('user_id', user.id).maybeSingle(),
-=======
-        supabase.from('habits').select('streak'),
-        supabase.from('goals').select('progress'),
-        supabase.from('user_settings').select('xp_spent').eq('user_id', user.id).single(),
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
         supabase.from('profiles').select('*').eq('id', user.id).single(),
         supabase.from('tasks').select('id, title, due, status').eq('user_id', user.id).neq('status', 'completed')
       ]);
@@ -86,7 +80,6 @@ export default function Topbar() {
     fetchRealData();
   }, [user, location.pathname]); 
 
-<<<<<<< HEAD
   // ─── FIX: Debounced & Scoped Global Search ───
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -111,19 +104,6 @@ export default function Topbar() {
 
     // Cleanup function: If the user types again before 300ms, cancel the previous search!
     return () => clearTimeout(delayDebounceFn); 
-=======
-  // ─── LIVE SEARCH ENGINE ───
-  useEffect(() => {
-    if (searchQuery.trim().length > 1) {
-      const fetchSearch = async () => {
-        const { data } = await supabase.from('tasks').select('id, title, subject, status').eq('user_id', user.id).ilike('title', `%${searchQuery}%`).limit(5);
-        setSearchResults(data || []);
-      };
-      fetchSearch();
-    } else {
-      setSearchResults([]);
-    }
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   }, [searchQuery, user]);
 
   const showToast = (msg, type = "success") => {
@@ -255,10 +235,7 @@ export default function Topbar() {
           <div className="relative">
             <button 
               onClick={() => setIsNotifOpen(!isNotifOpen)}
-<<<<<<< HEAD
               title="Notifications"
-=======
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
               className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors relative ${isNotifOpen ? 'bg-white/10 border-white/20 text-white' : 'bg-[#13131a] border-white/5 text-white/50 hover:bg-white/5 hover:text-white'}`}
             >
               <Icon d={Icons.bell} size={18} />
@@ -290,11 +267,7 @@ export default function Topbar() {
 
           {/* ─── DYNAMIC AVATAR ─── */}
           <div className="relative">
-<<<<<<< HEAD
             <div onClick={() => setIsDropdownOpen(!isDropdownOpen)} title="Settings" className="cursor-pointer hover:scale-105 transition-transform">
-=======
-            <div onClick={() => setIsDropdownOpen(!isDropdownOpen)} className="cursor-pointer hover:scale-105 transition-transform">
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
               {renderAvatar()}
             </div>
 
@@ -306,17 +279,10 @@ export default function Topbar() {
                 </div>
                 
                 <button onClick={() => { setIsDropdownOpen(false); setIsProfileModalOpen(true); }} className="w-full text-left px-4 py-2 text-[13px] text-slate-300 hover:bg-white/5 hover:text-white transition-colors flex items-center gap-2">
-<<<<<<< HEAD
                   <Icon d={Icons.settings} size={16} className="text-indigo-400" /> Profile Settings
                 </button>
                 <button onClick={async () => {await supabase.auth.signOut(); navigate("/"); }} className="w-full text-left px-4 py-2 text-[13px] text-red-400 hover:bg-red-500/10 transition-colors flex items-center gap-2 mt-1">
                   <Icon d={Icons.logOut} size={16} /> Sign Out
-=======
-                  <span>⚙️</span> Profile Settings
-                </button>
-                <button onClick={async () => {await supabase.auth.signOut(); navigate("/"); }} className="w-full text-left px-4 py-2 text-[13px] text-red-400 hover:bg-red-500/10 transition-colors flex items-center gap-2 mt-1">
-                  <span>🚪</span> Sign Out
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
                 </button>
               </div>
             )}

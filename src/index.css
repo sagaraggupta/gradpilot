@@ -16,6 +16,7 @@ body {
     @apply cursor-pointer;
   }
 }
+
 /* Themes for Animations */
 @theme {
   /* Existing border spin */
@@ -33,8 +34,6 @@ body {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
   }
-  
-<<<<<<< HEAD
 }
 
 /* --- GLOBAL AUTO-HIDE MODULAR SCROLLBAR --- */
@@ -77,6 +76,4 @@ html {
 html:hover {
   scrollbar-width: thin;
   scrollbar-color: #334155 transparent;
-=======
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
 }

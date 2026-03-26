@@ -15,7 +15,6 @@ export default function DashboardLayout() {
 
   useEffect(() => {
     if (user) {
-<<<<<<< HEAD
       // 🧠 LOGIC FIX: Check Session Storage so it only runs once per browser session!
       const hasChecked = sessionStorage.getItem('hasCheckedStreak_Today');
       
@@ -26,12 +25,6 @@ export default function DashboardLayout() {
           sessionStorage.setItem('hasCheckedStreak_Today', 'true');
         });
       }
-=======
-      // Run the engine instantly on load
-      runBackgroundStreakCheck(user.id).then(res => {
-        if (res) setStreakAlert(res);
-      });
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     }
   }, [user]);
 

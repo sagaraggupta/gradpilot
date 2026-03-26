@@ -3,10 +3,6 @@ import { Icon, Icons } from "../components/ui/Icon";
 import Modal from "../components/ui/Modal";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
-<<<<<<< HEAD
-=======
-import { GoogleGenerativeAI } from "@google/generative-ai";
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
 
 const PERSONAS = {
   standard: { id: "standard", name: "GradPilot Base", icon: "🤖", cost: 0, desc: "Helpful and polite." },
@@ -32,16 +28,31 @@ export default function AIAssistant() {
   const [goals, setGoals] = useState([]);
   const [userSettings, setUserSettings] = useState(null);
   const [studySessions, setStudySessions] = useState([]); 
-<<<<<<< HEAD
   const [profile, setProfile] = useState(null);
-=======
-  const [profile, setProfile] = useState(null); // 🐛 FIX: Added Profile State
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
 
-  // Chat State
-  const [messages, setMessages] = useState([
-    { role: "ai", text: "Welcome to the AI Study Assistant. I'm connected to your academic database. How can I help you dominate your classes today?" }
-  ]);
+  // Chat State (with 24-hour LocalStorage memory)
+  const [messages, setMessages] = useState(() => {
+    const savedChat = localStorage.getItem('gradpilot_ai_chat');
+    if (savedChat) {
+      try {
+        const { data, timestamp } = JSON.parse(savedChat);
+        const isExpired = Date.now() - timestamp > 24 * 60 * 60 * 1000; // 24 hours
+        if (!isExpired) return data;
+        localStorage.removeItem('gradpilot_ai_chat');
+      } catch (error) {
+        console.error("Failed to parse chat history", error);
+      }
+    }
+    return [{ role: "ai", text: "Welcome to the AI Study Assistant. I'm connected to your academic database. How can I help you dominate your classes today?" }];
+  });
+
+  // Auto-save chat to browser memory whenever it changes
+  useEffect(() => {
+    localStorage.setItem('gradpilot_ai_chat', JSON.stringify({
+      data: messages,
+      timestamp: Date.now()
+    }));
+  }, [messages]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef(null);
@@ -51,26 +62,19 @@ export default function AIAssistant() {
   const [syllabusText, setSyllabusText] = useState("");
   const [isParsing, setIsParsing] = useState(false);
 
-<<<<<<< HEAD
-  // 🐛 FIX 1: The Local Date Trap
-  // Replaced the buggy `.toISOString()` with local date math
+  // Calculate reliable local date to avoid timezone shift bugs at midnight
   const today = new Date();
   const year = today.getFullYear();
   const month = String(today.getMonth() + 1).padStart(2, '0');
   const day = String(today.getDate()).padStart(2, '0');
   const todayStr = `${year}-${month}-${day}`;
-=======
-  const todayStr = new Date().toISOString().split('T')[0];
-  const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || "dummy_key");
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
 
   // ─── FETCH ALL DATA ───
   useEffect(() => {
     const fetchAll = async () => {
       setLoading(true);
-<<<<<<< HEAD
-      // 🐛 FIX 2: Data Leaks
-      // Added .eq('user_id', user.id) to ALL tables to prevent reading other students' data!
+      
+      // Enforce Row Level Security by strictly filtering with user.id
       const [ { data: tData }, { data: hData }, { data: gData }, { data: sData }, { data: sessionData }, { data: pData } ] = await Promise.all([
         supabase.from('tasks').select('*').eq('user_id', user.id),
         supabase.from('habits').select('*').eq('user_id', user.id),
@@ -78,15 +82,6 @@ export default function AIAssistant() {
         supabase.from('user_settings').select('*').eq('user_id', user.id).single(),
         supabase.from('study_sessions').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
         supabase.from('profiles').select('total_xp').eq('id', user.id).single() 
-=======
-      const [ { data: tData }, { data: hData }, { data: gData }, { data: sData }, { data: sessionData }, { data: pData } ] = await Promise.all([
-        supabase.from('tasks').select('*'),
-        supabase.from('habits').select('*'),
-        supabase.from('goals').select('*'),
-        supabase.from('user_settings').select('*').eq('user_id', user.id).single(),
-        supabase.from('study_sessions').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
-        supabase.from('profiles').select('total_xp').eq('id', user.id).single() // 🐛 FIX: Fetch total_xp from profiles
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       ]);
       
       if (tData) setTasks(tData);
@@ -94,19 +89,11 @@ export default function AIAssistant() {
       if (gData) setGoals(gData);
       if (sData) setUserSettings(sData);
       if (sessionData) setStudySessions(sessionData);
-<<<<<<< HEAD
       if (pData) setProfile(pData); 
       
       setLoading(false);
     };
     if (user) fetchAll();
-=======
-      if (pData) setProfile(pData); // 🐛 FIX: Set profile data
-      
-      setLoading(false);
-    };
-    fetchAll();
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   }, [user]);
 
   useEffect(() => {
@@ -115,10 +102,7 @@ export default function AIAssistant() {
 
   // ─── XP MATH ───
   const { currentBalance, activePersona, unlockedPersonas } = useMemo(() => {
-<<<<<<< HEAD
-=======
-    // 🐛 FIX: Start 'earned' with the Focus Timer XP from the Profile!
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
+    // Start earned tally with the Focus Timer XP from the Profile
     let earned = profile?.total_xp || 0; 
     
     habits.forEach(h => earned += (h.streak * 50));
@@ -131,11 +115,7 @@ export default function AIAssistant() {
       activePersona: userSettings?.active_persona || 'standard',
       unlockedPersonas: userSettings?.unlocked_personas || ['standard']
     };
-<<<<<<< HEAD
   }, [habits, goals, userSettings, profile]); 
-=======
-  }, [habits, goals, userSettings, profile]); // 🐛 FIX: Added profile to dependency array
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
 
   const deductXP = async (amount) => {
     const newSpent = (userSettings?.xp_spent || 0) + amount;
@@ -165,58 +145,29 @@ export default function AIAssistant() {
     setIsParsing(true);
 
     try {
-<<<<<<< HEAD
-      // 🐛 FIX 3: Secure Backend Calling
-      // Send the text to the Supabase Edge Function to safely parse into JSON
+      // Delegate AI processing to secure Edge Functions to prevent exposing API keys on the frontend
       const { data: extractedTasks, error } = await supabase.functions.invoke('parse-syllabus', {
         body: { syllabusText }
       });
 
       if (error) throw error;
       if (!extractedTasks || !Array.isArray(extractedTasks)) throw new Error("Invalid response format");
-=======
-      const prompt = `
-        You are an advanced academic data extractor. Read the following syllabus text and extract all assignments, essays, exams, and readings. 
-        Format the output strictly as a JSON array of objects. Do NOT wrap it in markdown block quotes. Just the raw JSON array.
-        Each object must have exactly these keys:
-        - "title": (string) The name of the assignment
-        - "subject": (string) Try to infer the subject/class name, otherwise use "General"
-        - "due": (string) Due date formatted strictly as "YYYY-MM-DD"
-        - "priority": (string) Either "low", "medium", or "high" (Exams should be high)
-        
-        Text to parse:
-        ${syllabusText}
-      `;
-
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-      const result = await fallbackModel(prompt, model);
-      
-      const cleanJsonStr = result.replace(/```json/g, "").replace(/```/g, "").trim();
-      const extractedTasks = JSON.parse(cleanJsonStr);
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
 
       const tasksToInsert = extractedTasks.map(t => ({
         user_id: user.id,
         title: t.title,
-<<<<<<< HEAD
         subject: t.subject || "General",
         due: t.due,
         priority: t.priority || "medium",
-=======
-        subject: t.subject,
-        due: t.due,
-        priority: t.priority,
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
         status: "pending",
         progress: 0
       }));
 
       await supabase.from('tasks').insert(tasksToInsert);
       setTasks(prev => [...tasksToInsert, ...prev]);
-<<<<<<< HEAD
+      
+      // Deduct XP only on successful execution
       await deductXP(50);
-=======
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
 
       setIsParserOpen(false);
       setSyllabusText("");
@@ -224,37 +175,12 @@ export default function AIAssistant() {
 
     } catch (error) {
       console.error(error);
-<<<<<<< HEAD
       alert("Failed to parse syllabus. Please try again.");
-=======
-      alert("Failed to parse syllabus. Ensure the text contains clear assignment dates.");
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     } finally {
       setIsParsing(false);
     }
   };
 
-<<<<<<< HEAD
-=======
-  // ─── DUAL ENGINE WRAPPER ───
-  const fallbackModel = async (promptText, geminiModel) => {
-    try {
-      const result = await geminiModel.generateContent(promptText);
-      return result.response.text();
-    } catch (err) {
-      console.warn("Gemini failed, trying Groq Llama 3.1...");
-      const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${import.meta.env.VITE_GROQ_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "llama-3.1-8b-instant", messages: [{ role: "user", content: promptText }], max_tokens: 800 })
-      });
-      if (!groqResponse.ok) throw new Error("Groq also failed");
-      const groqData = await groqResponse.json();
-      return groqData.choices[0].message.content;
-    }
-  };
-
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
   // ─── MAIN CHAT HANDLER ───
   const handleSendMessage = async (e, forcedText = null, actionCost = 0) => {
     if (e) e.preventDefault();
@@ -262,10 +188,6 @@ export default function AIAssistant() {
 
     if (textToSend === "modal:parse") {
       if (currentBalance < actionCost) return alert("Not enough XP!");
-<<<<<<< HEAD
-=======
-      await deductXP(actionCost);
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
       setIsParserOpen(true);
       return;
     }
@@ -313,9 +235,7 @@ export default function AIAssistant() {
         finalPrompt = `${personaContext}\n\nUser: ${textToSend}`;
       }
 
-<<<<<<< HEAD
-      // 🐛 FIX 3: Secure Backend Calling
-      // Send the fully constructed prompt to the Edge Function instead of using the frontend SDK
+      // Secure Backend Inference: Call the edge function with the composed system prompt
       const { data, error } = await supabase.functions.invoke('ai-chat', {
         body: { prompt: finalPrompt }
       });
@@ -326,21 +246,13 @@ export default function AIAssistant() {
 
     } catch (error) {
       console.error(error);
+      // Refund action cost on failure
       if (actionCost > 0) {
         const refund = (userSettings?.xp_spent || 0) - actionCost;
         setUserSettings(prev => ({ ...prev, xp_spent: refund }));
         await supabase.from('user_settings').update({ xp_spent: refund }).eq('user_id', user.id);
       }
       setMessages(prev => [...prev, { role: "ai", text: "⚠️ Secure connection to AI core failed. Your XP has been refunded." }]);
-=======
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-      const aiResponseText = await fallbackModel(finalPrompt, model);
-
-      setMessages(prev => [...prev, { role: "ai", text: aiResponseText }]);
-
-    } catch (error) {
-      setMessages(prev => [...prev, { role: "ai", text: "⚠️ Both Gemini and Groq API clusters are currently offline. Running in simulation mode." }]);
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     } finally {
       setIsTyping(false);
     }
@@ -411,7 +323,9 @@ export default function AIAssistant() {
                 <Icon d="M5 12h14M12 5l7 7-7 7" size={16} /> 
               </button>
             </div>
-            <div className="text-center text-[10px] text-white/30 mt-2">Smart Actions cost XP.</div>
+            <div className="text-center text-[10px] font-bold text-white/30 mt-3 tracking-wide">
+              ⚡ Premium commands consume XP. Chat memory auto-clears every 24 hours.
+            </div>
           </form>
         </div>
 
@@ -486,7 +400,7 @@ export default function AIAssistant() {
         <form onSubmit={handleParseSyllabus} className="flex flex-col gap-4">
           <div>
             <p className="text-[13px] text-white/60 mb-4 leading-relaxed">
-              Paste the text from your course syllabus below. Gemini will scan it, extract all assignment names and due dates, and magically add them to your Kanban board!
+              Paste the text from your course syllabus below. AI Agent will scan it, extract all assignment names and due dates, and magically add them to your Kanban board!
             </p>
             <textarea 
               value={syllabusText} 

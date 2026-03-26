@@ -32,17 +32,12 @@ export default function Leaderboard() {
   const fetchLeaderboardData = async () => {
     setLoading(true);
     
-<<<<<<< HEAD
     // 💥 SCALABILITY FIX: Limit to Top 50 Global Users
-=======
-    // FETCHING EQUIPPED FRAMES FOR THE LEADERBOARD
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     const { data: globalData } = await supabase
       .from('profiles')
       .select('id, full_name, total_xp, current_streak, is_public, equipped_frame')
       .eq('is_public', true)
       .order('total_xp', { ascending: false })
-<<<<<<< HEAD
       .limit(50);
 
     if (globalData) setGlobalLeaders(globalData);
@@ -67,16 +62,11 @@ export default function Leaderboard() {
     }
 
     // ─── SQUAD & FRIEND LOGIC ───
-=======
-      .limit(100);
-
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     const { data: friendships } = await supabase
       .from('friendships')
       .select('*')
       .or(`requester_id.eq.${user.id},receiver_id.eq.${user.id}`);
 
-<<<<<<< HEAD
     if (friendships) {
       const acceptedFriendsIds = friendships
         .filter(f => f.status === 'accepted')
@@ -109,30 +99,6 @@ export default function Leaderboard() {
       }
     }
     
-=======
-    if (globalData) {
-      setGlobalLeaders(globalData);
-      const rankIndex = globalData.findIndex(p => p.id === user.id);
-      if (rankIndex !== -1) setMyRank(rankIndex + 1);
-
-      if (friendships) {
-        const acceptedFriendsIds = friendships
-          .filter(f => f.status === 'accepted')
-          .map(f => f.requester_id === user.id ? f.receiver_id : f.requester_id);
-        
-        acceptedFriendsIds.push(user.id);
-        const squadData = globalData.filter(p => acceptedFriendsIds.includes(p.id));
-        setSquadLeaders(squadData.sort((a, b) => b.total_xp - a.total_xp));
-
-        const pending = friendships
-          .filter(f => f.status === 'pending' && f.receiver_id === user.id)
-          .map(f => f.requester_id);
-        
-        const requestsData = globalData.filter(p => pending.includes(p.id));
-        setPendingRequests(requestsData);
-      }
-    }
->>>>>>> d5c8fd0b23f1e1f126f3ab7cb66827dd5d3393e6
     setLoading(false);
   };
 
