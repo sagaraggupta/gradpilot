@@ -274,7 +274,7 @@ export default function Expenses() {
               <span className={`text-[13px] font-bold ${isOverBudget ? 'text-red-400' : 'text-green-400'}`}>{Math.round(budgetUsedPct)}% used</span>
             </div>
             <div className="relative">
-              <ProgressBar value={budgetUsedPct} color={isOverBudget ? "#f87171" : "#4ade80"} height={12} />
+              <ProgressBar value={budgetUsedPct} color={budgetUsedPct > 100 ? "#f87171" : (budgetUsedPct >= 80 ? "#fbbf24" : "#4ade80")} height={12} />
               <div className="absolute top-[-2px] bottom-[-2px] w-[2px] bg-amber-400 rounded-sm z-10 opacity-70" style={{ left: '80%' }} title="80% Warning Limit" />
             </div>
             <div className="flex justify-between mt-2 text-[11px] font-medium text-white/40">

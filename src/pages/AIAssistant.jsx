@@ -12,6 +12,7 @@ const PERSONAS = {
 };
 
 const SMART_ACTIONS = [
+  { id: "audit", name: "Audit My Finances", command: "/audit", cost: 25, icon: "💸" },
   { id: "coach", name: "Analyze Performance", command: "/coach", cost: 25, icon: "🧠" },
   { id: "studyplan", name: "Generate Study Plan", command: "/studyplan", cost: 20, icon: "📅" },
   { id: "roast", name: "Roast My Productivity", command: "/roast", cost: 15, icon: "🔥" },
@@ -29,6 +30,7 @@ export default function AIAssistant() {
   const [userSettings, setUserSettings] = useState(null);
   const [studySessions, setStudySessions] = useState([]); 
   const [profile, setProfile] = useState(null);
+  const [expenses, setExpenses] = useState([]);
 
   // Chat State (with 24-hour LocalStorage memory)
   const [messages, setMessages] = useState(() => {
@@ -74,14 +76,14 @@ export default function AIAssistant() {
     const fetchAll = async () => {
       setLoading(true);
       
-      // Enforce Row Level Security by strictly filtering with user.id
-      const [ { data: tData }, { data: hData }, { data: gData }, { data: sData }, { data: sessionData }, { data: pData } ] = await Promise.all([
+      const [ { data: tData }, { data: hData }, { data: gData }, { data: sData }, { data: sessionData }, { data: pData }, { data: eData } ] = await Promise.all([
         supabase.from('tasks').select('*').eq('user_id', user.id),
         supabase.from('habits').select('*').eq('user_id', user.id),
         supabase.from('goals').select('*').eq('user_id', user.id),
         supabase.from('user_settings').select('*').eq('user_id', user.id).single(),
         supabase.from('study_sessions').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
-        supabase.from('profiles').select('total_xp').eq('id', user.id).single() 
+        supabase.from('profiles').select('*').eq('id', user.id).single(), // 🚀 NEW: Changed to select('*') to get the budget
+        supabase.from('expenses').select('*').eq('user_id', user.id) // 🚀 NEW: Fetching expenses
       ]);
       
       if (tData) setTasks(tData);
@@ -90,6 +92,7 @@ export default function AIAssistant() {
       if (sData) setUserSettings(sData);
       if (sessionData) setStudySessions(sessionData);
       if (pData) setProfile(pData); 
+      if (eData) setExpenses(eData);
       
       setLoading(false);
     };
@@ -185,21 +188,24 @@ export default function AIAssistant() {
   const handleSendMessage = async (e, forcedText = null, actionCost = 0) => {
     if (e) e.preventDefault();
     const textToSend = forcedText || input;
+    if (!textToSend.trim()) return;
+
+    // 🛑 THE LOOPHOLE FIX: Check if they manually typed a premium command!
+    const matchedCommand = SMART_ACTIONS.find(a => a.command === textToSend);
+    const finalCost = matchedCommand ? matchedCommand.cost : actionCost;
 
     if (textToSend === "modal:parse") {
-      if (currentBalance < actionCost) return alert("Not enough XP!");
+      if (currentBalance < finalCost) return alert("Not enough XP!");
       setIsParserOpen(true);
       return;
     }
 
-    if (!textToSend.trim()) return;
-
-    if (actionCost > 0) {
-      if (currentBalance < actionCost) {
+    if (finalCost > 0) {
+      if (currentBalance < finalCost) {
         setMessages(prev => [...prev, { role: "ai", text: "Error: Insufficient XP for this Smart Action." }]);
         return;
       }
-      await deductXP(actionCost);
+      await deductXP(finalCost);
     }
 
     setMessages(prev => [...prev, { role: "user", text: textToSend }]);
@@ -213,15 +219,20 @@ export default function AIAssistant() {
 
       if (textToSend === "/coach") {
         const recentMoods = studySessions.map(s => `${s.subject}: ${s.duration_minutes}m (${s.mood})`).join(", ");
-        finalPrompt = `You are an elite academic coach. Analyze the user's data:
-          Pending Tasks: ${pendingTasks.length}
-          Missed Habits Today: ${missedHabits.map(h => h.name).join(', ') || "None"}
-          Recent Study Sessions: ${recentMoods || "No recent sessions logged."}
-          
-          Provide a highly personalized, empathetic 3-step action plan based on their recent moods and workload. Under 100 words.`;
+        finalPrompt = `You are an elite academic coach. Analyze the user's data: Pending Tasks: ${pendingTasks.length}, Missed Habits: ${missedHabits.map(h => h.name).join(', ') || "None"}. Recent Sessions: ${recentMoods || "None"}. Provide a personalized 3-step action plan under 100 words.`;
       } 
+      // 🚀 THE NEW AUDIT COMMAND 🚀
+      else if (textToSend === "/audit") {
+        const spentThisMonth = expenses
+          .filter(exp => new Date(exp.date).getMonth() === new Date().getMonth())
+          .reduce((acc, exp) => acc + Number(exp.amount), 0);
+        
+        const recentExp = expenses.slice(0, 5).map(exp => `${exp.category}: ₹${exp.amount}`).join(", ");
+        
+        finalPrompt = `You are a strict, highly analytical financial advisor. The user's monthly budget is ₹${profile?.monthly_budget || 7000}. They have spent ₹${spentThisMonth} this month. Recent purchases: ${recentExp}. Give them a punchy, brutal financial audit. Warn them if they are burning cash too fast. Under 100 words.`;
+      }
       else if (textToSend === "/studyplan") {
-        finalPrompt = `You are a strict academic advisor. Student has these pending assignments: ${JSON.stringify(pendingTasks.map(t => t.title + " due " + t.due))}. Generate a short, bulleted 1-day study plan. Under 100 words.`;
+        finalPrompt = `You are an academic advisor. Student has pending assignments: ${JSON.stringify(pendingTasks.map(t => t.title))}. Generate a short 1-day study plan. Under 100 words.`;
       } 
       else if (textToSend === "/roast") {
         finalPrompt = `You are a savage AI. Roast the student. They have ${pendingTasks.length} pending assignments and missed these habits today: ${JSON.stringify(missedHabits.map(h => h.name))}. Keep it funny and brutal. Under 80 words.`;
@@ -229,13 +240,13 @@ export default function AIAssistant() {
       else {
         let personaContext = "You are a helpful AI study assistant.";
         if (activePersona === 'eli5') personaContext = "Explain everything simply like I'm 5 years old.";
-        if (activePersona === 'socratic') personaContext = "Ask guiding questions to help me arrive at the answer myself. Don't give direct answers.";
-        if (activePersona === 'strict') personaContext = "Be a strict, demanding university professor. Keep answers brief and condescending.";
+        if (activePersona === 'socratic') personaContext = "Ask guiding questions to help me arrive at the answer myself.";
+        if (activePersona === 'strict') personaContext = "Be a strict, demanding university professor.";
 
         finalPrompt = `${personaContext}\n\nUser: ${textToSend}`;
       }
 
-      // Secure Backend Inference: Call the edge function with the composed system prompt
+      // Secure Backend Inference
       const { data, error } = await supabase.functions.invoke('ai-chat', {
         body: { prompt: finalPrompt }
       });
@@ -246,13 +257,12 @@ export default function AIAssistant() {
 
     } catch (error) {
       console.error(error);
-      // Refund action cost on failure
-      if (actionCost > 0) {
-        const refund = (userSettings?.xp_spent || 0) - actionCost;
+      if (finalCost > 0) {
+        const refund = (userSettings?.xp_spent || 0) - finalCost;
         setUserSettings(prev => ({ ...prev, xp_spent: refund }));
         await supabase.from('user_settings').update({ xp_spent: refund }).eq('user_id', user.id);
       }
-      setMessages(prev => [...prev, { role: "ai", text: "⚠️ Secure connection to AI core failed. Your XP has been refunded." }]);
+      setMessages(prev => [...prev, { role: "ai", text: "⚠️ Secure connection failed. Your XP has been refunded." }]);
     } finally {
       setIsTyping(false);
     }
