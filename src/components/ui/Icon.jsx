@@ -41,7 +41,7 @@ export const Icons = {
   
   //Focus Timer Icons
   play: ["M5 3l14 9-14 9V3z"],
-  pause: ["M6 4h4v16H6z", "M14 4h4v16h4z"],
+  pause: ["M6 4h4v16H6z", "M14 4h4v16h-4z"],
   restart: ["M21 12a9 9 0 11-18 0 9 9 0 0118 0z M12 7v5l3 3"],
   skip: ["M5 4l10 8-10 8V4z M19 5v14"],
   session: "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",

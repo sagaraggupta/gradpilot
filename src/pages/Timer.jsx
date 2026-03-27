@@ -28,6 +28,58 @@ export default function Timer() {
   const [sessionsToday, setSessionsToday] = useState(0);
   const [focusMinutes, setFocusMinutes] = useState(0);
 
+  // ─── ZEN MODE & SPOTIFY STATE (With LocalStorage Memory) ───
+  const [isZenMode, setIsZenMode] = useState(false);
+  
+  const [spotifyUrl, setSpotifyUrl] = useState(() => {
+    return localStorage.getItem('gradpilot_spotify') || ""; 
+  });
+
+  // Auto-save the playlist URL whenever the user changes it
+  useEffect(() => {
+    localStorage.setItem('gradpilot_spotify', spotifyUrl);
+  }, [spotifyUrl]); 
+
+  // Helper to securely convert standard Spotify share links into Embed UI links
+  const getSpotifyEmbedUrl = (link) => {
+    const defaultEmbed = "https://open.spotify.com/embed/playlist/0vvXsWCC9xrXsKd4FyS8kM?theme=0";
+    if (!link) return defaultEmbed;
+    if (link.includes('/embed/')) return link; 
+    
+    try {
+      const url = new URL(link);
+      // Extracts just the "/playlist/ID" or "/track/ID" part and injects /embed
+      return `https://open.spotify.com/embed${url.pathname}?theme=0`;
+    } catch (e) {
+      return defaultEmbed; 
+    }
+  };
+
+  const toggleZenMode = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+        setIsZenMode(true);
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        }
+        setIsZenMode(false);
+      }
+    } catch (err) {
+      console.error("Fullscreen failed:", err);
+    }
+  };
+
+  // Sync React state if the user presses the 'Esc' key to exit
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement) setIsZenMode(false);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
   // 🚀 MAGIC 1: Update the Browser Tab Title with the countdown!
   useEffect(() => {
     const mins = String(Math.floor(seconds / 60)).padStart(2, "0");
@@ -224,6 +276,88 @@ export default function Timer() {
 
   return (
     <div className="flex flex-col gap-6 items-center pb-10 relative">
+      {/* ─── ZEN MODE FULLSCREEN OVERLAY ─── */}
+      {isZenMode && (
+        <div className="fixed inset-0 z-[100] bg-[#050508] flex flex-col items-center justify-center animate-[fadeIn_0.5s_ease-out]">
+          
+          {/* Ambient Glow */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-500/10 blur-[120px] rounded-full pointer-events-none" />
+
+          <div className="relative z-10 flex flex-col items-center">
+            <div className="text-[12px] font-bold text-indigo-400 tracking-[0.3em] uppercase mb-8">
+              Deep Focus Mode
+            </div>
+
+            {/* MASSIVE TIMER */}
+            <div className="text-[150px] md:text-[200px] font-extrabold text-white leading-none tracking-tight mb-16 drop-shadow-2xl font-['Plus_Jakarta_Sans']">
+              {mins}:{secs}
+            </div>
+
+            {/* CONTROLS (🐛 BUG FIX: Added mb-16 here for perfect spacing!) */}
+            <div className="flex items-center gap-8 mb-16">
+              <button
+                onClick={toggleTimer} 
+                className="w-20 h-20 rounded-full bg-white text-black flex items-center justify-center text-4xl hover:scale-105 transition-transform shadow-[0_0_40px_rgba(255,255,255,0.3)]"
+              >
+                <Icon d={running ? Icons.pause : Icons.play} size={32} className={running ? "" : "ml-1"} />
+              </button>
+
+              <button
+                onClick={toggleZenMode}
+                className="px-6 py-4 rounded-full bg-white/5 text-white/50 font-bold text-[14px] hover:bg-white/10 hover:text-white transition-all border border-white/10"
+              >
+                Exit Zen Mode (Esc)
+              </button>
+            </div>
+
+            {/* 🎧 THE SPOTIFY LOFI PLAYER (With SaaS Empty State) */}
+            <div className="w-full max-w-[400px] flex flex-col items-center animate-[fadeIn_1s_ease-out_0.5s_both]">
+              
+              {spotifyUrl ? (
+                /* The Active Player */
+                <div className="w-full h-[152px]">
+                  <iframe 
+                    style={{ borderRadius: '16px' }} 
+                    src={getSpotifyEmbedUrl(spotifyUrl)} 
+                    width="100%" 
+                    height="100%" 
+                    frameBorder="0" 
+                    allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" 
+                    loading="lazy"
+                    className="shadow-2xl border border-white/10 bg-[#282828]"
+                  ></iframe>
+                </div>
+              ) : (
+                /* The Premium Empty State */
+                <div className="w-full h-[152px] rounded-[16px] border border-dashed border-white/20 bg-white/[0.02] flex flex-col items-center justify-center text-center p-6 shadow-2xl">
+                  <span className="text-3xl mb-2 opacity-50">🎧</span>
+                  <div className="text-[13px] font-bold text-white/70">Connect Your Flow State</div>
+                  <div className="text-[11px] text-white/40 mt-1">Paste a Spotify playlist link below to enable the built-in player.</div>
+                </div>
+              )}
+              
+              {/* Custom Playlist Input */}
+              <div className={`mt-6 w-full flex items-center gap-3 transition-opacity duration-300 ${spotifyUrl ? 'opacity-30 hover:opacity-100 focus-within:opacity-100' : 'opacity-100'}`}>
+                <span className="text-[14px]">{spotifyUrl ? '🔗' : '✨'}</span>
+                <input 
+                  type="text" 
+                  value={spotifyUrl}
+                  onChange={(e) => setSpotifyUrl(e.target.value)}
+                  placeholder="Paste Spotify playlist link here..."
+                  className="w-full bg-transparent border-b border-white/20 text-white text-[12px] pb-1.5 outline-none focus:border-indigo-400 placeholder:text-white/30 transition-colors"
+                />
+                {/* A clear button so they can easily swap playlists */}
+                {spotifyUrl && (
+                  <button onClick={() => setSpotifyUrl("")} className="text-[10px] text-white/40 hover:text-red-400 font-bold tracking-wider uppercase">Clear</button>
+                )}
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      )}
+
       <div className="text-center">
         <h2 className="text-slate-100 font-bold text-[22px] font-['Plus_Jakarta_Sans']">Focus Timer</h2>
         <p className="text-white/40 text-[13px] mt-1">Stay in the zone. Earn XP.</p>
@@ -264,10 +398,21 @@ export default function Timer() {
         <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-white/30">▼</div>
       </div>
 
-      <div className="flex items-center gap-6 mt-2">
-        <button onClick={handleRestart} className="w-12 h-12 rounded-xl border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors text-lg flex items-center justify-center group" title="Restart Timer"><span className="group-active:-rotate-90 transition-transform">↺</span></button>
-        <button onClick={toggleTimer} className="w-[80px] h-[80px] rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-3xl flex items-center justify-center shadow-[0_10px_20px_rgba(99,102,241,0.3)] hover:opacity-90 hover:scale-105 active:scale-95 transition-all"><Icon d={running ? Icons.pause : Icons.play} size={32} className={running ? "" : "ml-1"} /></button>
-        <button onClick={handleSkip} className="w-12 h-12 rounded-xl border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors text-lg flex items-center justify-center group" title="Skip to next session"><Icon d={Icons.skip} size={20} className="group-active:translate-x-1 transition-transform" /></button>
+      <div className="flex flex-col items-center gap-6 mt-2">
+        {/* Standard Controls */}
+        <div className="flex items-center gap-6">
+          <button onClick={handleRestart} className="w-12 h-12 rounded-xl border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors text-lg flex items-center justify-center group" title="Restart Timer"><span className="group-active:-rotate-90 transition-transform">↺</span></button>
+          <button onClick={toggleTimer} className="w-[80px] h-[80px] rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-3xl flex items-center justify-center shadow-[0_10px_20px_rgba(99,102,241,0.3)] hover:opacity-90 hover:scale-105 active:scale-95 transition-all"><Icon d={running ? Icons.pause : Icons.play} size={32} className={running ? "" : "ml-1"} /></button>
+          <button onClick={handleSkip} className="w-12 h-12 rounded-xl border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors text-lg flex items-center justify-center group" title="Skip to next session"><Icon d={Icons.skip} size={20} className="group-active:translate-x-1 transition-transform" /></button>
+        </div>
+
+        {/* 🚀 NEW ZEN MODE BUTTON */}
+        <button 
+          onClick={toggleZenMode}
+          className="px-6 py-2.5 rounded-xl bg-indigo-500/10 text-indigo-300 font-bold text-[12px] uppercase tracking-wider border border-indigo-500/30 hover:bg-indigo-500/20 transition-all shadow-lg flex items-center gap-2"
+        >
+          <span className="text-base">🧘‍♂️</span> Enter Zen Mode
+        </button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-[650px] mt-6">
