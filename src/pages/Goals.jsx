@@ -5,6 +5,11 @@ import Modal from "../components/ui/Modal";
 import { Icon, Icons } from "../components/ui/Icon";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
+import StoreModal from "../components/goals/StoreModal";
+import DailyQuests from "../components/goals/DailyQuests";
+import HabitAnalytics from "../components/goals/HabitAnalytics";
+import AIHabitCoach from "../components/goals/AIHabitCoach";
+import AddGoalModal from "../components/goals/AddGoalModal";
 
 const EMOJI_LIST = ["📚", "💻", "🏃‍♂️", "🧘‍♀️", "💧", "🥗", "🎸", "💸", "📝", "🏆", "🧠", "⚡", "🎁", "🍕", "🎮", "📺"];
 
@@ -78,35 +83,38 @@ export default function Goals() {
     }
   }, [userSettings?.active_theme]);
 
-  // ─── FETCH DATA ───
+  // ─── 🛡️ SAFE DATA FETCHING (Bugs 1 & 2) ───
   useEffect(() => {
+    if (!user?.id) return; // 🐛 Bug 1: CRITICAL Null guard
     fetchData();
   }, [user]);
 
   const fetchData = async () => {
     setLoading(true);
-    // 🔒 FIX: Added .eq('user_id', user.id) to EVERY table!
-    const [
-      { data: habitsData },
-      { data: goalsData },
-      { data: rewardsData },
-      { data: settingsData },
-      { data: profileData }
-    ] = await Promise.all([
-      supabase.from('habits').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
-      supabase.from('goals').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
-      supabase.from('custom_rewards').select('*').eq('user_id', user.id).order('cost', { ascending: true }),
-      supabase.from('user_settings').select('*').eq('user_id', user.id).single(),
-      supabase.from('profiles').select('*').eq('id', user.id).single()
-    ]);
+    try {
+      const [habitsRes, goalsRes, rewardsRes, settingsRes, profileRes] = await Promise.all([
+        supabase.from('habits').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
+        supabase.from('goals').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
+        supabase.from('custom_rewards').select('*').eq('user_id', user.id).order('cost', { ascending: true }),
+        supabase.from('user_settings').select('*').eq('user_id', user.id).single(),
+        supabase.from('profiles').select('*').eq('id', user.id).single()
+      ]);
 
-    if (habitsData) setHabits(habitsData);
-    if (goalsData) setGoals(goalsData);
-    if (rewardsData) setCustomRewards(rewardsData);
-    if (settingsData) setUserSettings(settingsData);
-    if (profileData) setProfile(prev => ({ ...prev, ...profileData }));
-    
-    setLoading(false);
+      // 🐛 Bug 2: Strict Error Checking
+      if (habitsRes.error) throw habitsRes.error;
+
+      if (habitsRes.data) setHabits(habitsRes.data);
+      if (goalsRes.data) setGoals(goalsRes.data);
+      if (rewardsRes.data) setCustomRewards(rewardsRes.data);
+      if (settingsRes.data) setUserSettings(settingsRes.data);
+      if (profileRes.data) setProfile(prev => ({ ...prev, ...profileRes.data }));
+      
+    } catch (error) {
+      console.error("Fetch Data Error:", error);
+      showToast("Failed to sync your data. Please refresh.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const showToast = (message) => {
@@ -114,20 +122,15 @@ export default function Goals() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // ─── GAMIFICATION & XP MATH ───
+  // ─── 🛡️ GAMIFICATION & XP MATH (Bug 3 & 6 Fix) ───
   const gamification = useMemo(() => {
     const habitsDoneToday = habits.filter(h => h.last_completed === todayStr).length;
     const highestStreak = habits.length > 0 ? Math.max(...habits.map(h => h.streak)) : 0;
     const goalsCompleted = goals.filter(g => g.progress === 100).length;
 
-    let totalEarnedXp = profile.total_xp || 0; 
-    habits.forEach(h => totalEarnedXp += (h.streak * 50));
-    goals.forEach(g => {
-      if (g.progress === 100) totalEarnedXp += 500;
-      else totalEarnedXp += (g.progress * 5);
-    });
-
-    const currentBalance = totalEarnedXp - (userSettings?.xp_spent || 0);
+    // 🐛 Bug 3 Fix: Single Source of Truth for XP. No more double counting!
+    const totalEarnedXp = profile.total_xp || 0; 
+    const currentBalance = Math.max(0, totalEarnedXp - (userSettings?.xp_spent || 0));
 
     const badges = [
       { id: "b1", icon: "🔥", name: "On Fire", desc: "Reach a 5-day habit streak", earned: highestStreak >= 5 },
@@ -139,7 +142,13 @@ export default function Goals() {
     ];
 
     return { habitsDoneToday, highestStreak, totalEarnedXp, currentBalance, badges, badgesEarned: badges.filter(b=>b.earned).length };
-  }, [habits, goals, todayStr, userSettings, profile]);
+  }, [habits, goals, todayStr, userSettings?.xp_spent, profile.total_xp]); 
+  // 🐛 Bug 6 Fix: Minimized dependencies so this doesn't run on every single tiny re-render
+
+  // ─── RPG LEVEL MATH ───
+  const currentLevel = Math.floor((profile.total_xp || 0) / 1000) + 1;
+  const levelProgressPct = ((profile.total_xp || 0) % 1000) / 10; 
+  const xpToNextLevel = 1000 - ((profile.total_xp || 0) % 1000);
 
   // ─── HABIT & GOAL LOGIC ───
   const handleAddHabit = async (e) => {
@@ -170,15 +179,61 @@ export default function Goals() {
 
   const deleteHabit = async (id) => {
     if(!window.confirm("Delete this habit?")) return;
+    
+    // 🐛 Bug 4 Fix: Optimistic Rollback
+    const previousHabits = [...habits];
     setHabits(prev => prev.filter(h => h.id !== id));
-    await supabase.from('habits').delete().eq('id', id).eq('user_id', user.id);
+    
+    const { error } = await supabase.from('habits').delete().eq('id', id).eq('user_id', user.id);
+    if (error) {
+      setHabits(previousHabits);
+      showToast("Failed to delete habit. Try again.");
+    }
   };
 
   const handleAddGoal = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
-    const { data } = await supabase.from('goals').insert([{ user_id: user.id, title: newGoal.title, deadline: newGoal.deadline, emoji: newGoal.emoji }]).select();
-    if (data) { setGoals([data[0], ...goals]); setIsGoalModalOpen(false); setNewGoal({ title: "", deadline: "", emoji: "🎯" }); showToast("Goal created!"); }
+    
+    // 1. Insert the Goal
+    const { data, error: goalError } = await supabase
+      .from('goals')
+      .insert([{ user_id: user.id, title: newGoal.title, deadline: newGoal.deadline, emoji: newGoal.emoji }])
+      .select();
+      
+    if (goalError) {
+      console.error("Goal Insert Error:", goalError);
+      showToast("Failed to create goal.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (data) { 
+      setGoals([data[0], ...goals]); 
+
+      // 2. Insert the AI Tasks (The Cross-Module Magic)
+      if (newGoal.generatedTasks && newGoal.generatedTasks.length > 0) {
+        const tasksToInsert = newGoal.generatedTasks.map(taskTitle => ({
+          user_id: user.id,
+          title: taskTitle,
+          subject: `Goal: ${newGoal.title.substring(0, 10)}...`,
+          status: 'pending',
+          priority: 'Medium',           // Matches your 'priority' column
+          due: newGoal.deadline         // 👈 MATCHES YOUR 'due' COLUMN EXACTLY!
+        }));
+        
+        const { error: taskError } = await supabase.from('tasks').insert(tasksToInsert);
+        
+        if (taskError) {
+          console.error("🚨 Supabase Task Error Details:", taskError);
+          alert(`Failed to save AI tasks: ${taskError.message}`); 
+        }
+      }
+
+      setIsGoalModalOpen(false); 
+      setNewGoal({ title: "", deadline: "", emoji: "🎯", generatedTasks: null }); 
+      showToast("Goal & Action Plan created! 🚀"); 
+    }
     setIsSubmitting(false);
   };
 
@@ -191,8 +246,16 @@ export default function Goals() {
 
   const deleteGoal = async (id) => {
     if(!window.confirm("Delete this goal?")) return;
+    
+    // 🐛 Bug 4 Fix: Optimistic Rollback
+    const previousGoals = [...goals];
     setGoals(prev => prev.filter(g => g.id !== id));
-    await supabase.from('goals').delete().eq('id', id).eq('user_id', user.id);
+    
+    const { error } = await supabase.from('goals').delete().eq('id', id).eq('user_id', user.id);
+    if (error) {
+      setGoals(previousGoals);
+      showToast("Failed to delete goal. Try again.");
+    }
   };
 
   // ─── STORE & THEME LOGIC ───
@@ -305,14 +368,27 @@ export default function Goals() {
         </div>
       )}
 
-      {/* HEADER & STORE BANNER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gradient-to-br from-indigo-500/10 to-purple-500/5 border border-indigo-500/20 p-5 rounded-2xl">
-        <div>
-          <h2 className="text-slate-100 font-bold text-[22px] font-['Plus_Jakarta_Sans']">Goals & Habits</h2>
-          <p className="text-indigo-300/60 text-[13px] mt-0.5">Build discipline and level up your life.</p>
+      {/* 🚀 UPGRADED HEADER: RPG LEVEL SYSTEM & STORE BANNER */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-gradient-to-br from-indigo-500/10 to-purple-500/5 border border-indigo-500/20 p-6 rounded-2xl relative overflow-hidden shadow-lg">
+        <div className="absolute top-0 right-0 w-48 h-48 bg-purple-500/10 blur-[60px] rounded-full pointer-events-none" />
+        
+        <div className="flex-1 w-full relative z-10">
+          <div className="flex items-end gap-3 mb-2">
+            <h2 className="text-slate-100 font-extrabold text-[24px] font-['Plus_Jakarta_Sans'] leading-none">Level {currentLevel}</h2>
+            <p className="text-indigo-300/60 text-[13px] font-medium leading-none pb-0.5">Discipline Architect</p>
+          </div>
+          
+          <div className="flex items-center gap-4 w-full max-w-md">
+            <div className="flex-1">
+              <ProgressBar value={levelProgressPct} color="#a855f7" height={8} />
+            </div>
+            <div className="text-[11px] font-bold text-white/40 whitespace-nowrap uppercase tracking-widest">
+              {xpToNextLevel} XP to Next
+            </div>
+          </div>
         </div>
         
-        <button onClick={() => setIsStoreOpen(true)} className="flex items-center gap-3 px-5 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-[0_0_20px_rgba(245,158,11,0.3)] hover:scale-105 transition-all w-full md:w-auto">
+        <button onClick={() => setIsStoreOpen(true)} className="relative z-10 flex items-center gap-3 px-5 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-[0_0_20px_rgba(245,158,11,0.3)] hover:scale-105 transition-all w-full md:w-auto shrink-0">
           <div className="flex flex-col text-left mr-2">
             <span className="text-[10px] uppercase font-bold text-amber-100/70 tracking-widest leading-none">Wallet Balance</span>
             <span className="text-[16px] font-extrabold leading-none mt-1">{gamification.currentBalance.toLocaleString()} XP</span>
@@ -321,6 +397,13 @@ export default function Goals() {
         </button>
       </div>
 
+      {/* 📜 NEW: DAILY QUESTS MODULE */}
+      <DailyQuests 
+        habitsDoneToday={gamification.habitsDoneToday} 
+        highestStreak={gamification.highestStreak} 
+        goalsCompleted={goals.filter(g => g.progress === 100).length} 
+      />
+
       {/* STAT CARDS */}
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Platform Streak" value={`${profile.current_streak} Days`} sub={`Best: ${profile.longest_streak} days`} icon="fire" color="#fb923c" />
@@ -328,6 +411,14 @@ export default function Goals() {
         <StatCard label="Habits Today" value={`${gamification.habitsDoneToday}/${habits.length}`} sub="Daily completion" icon="check" color={gamification.habitsDoneToday === habits.length && habits.length > 0 ? "#4ade80" : "#818cf8"} />
         <StatCard label="Badges" value={gamification.badgesEarned} sub="Unlocked achievements" icon="trophy" color="#a855f7" />
       </div>
+
+      {/* 🧠 MODULAR ANALYTICS & AI COACH */}
+      {habits.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-2">
+          <HabitAnalytics habits={habits} />
+          <AIHabitCoach habits={habits} habitsDoneToday={gamification.habitsDoneToday} />
+        </div>
+      )}
 
       {/* ROW 1: DAILY HABITS */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-6">
@@ -430,160 +521,17 @@ export default function Goals() {
         </div>
       </div>
 
-      {/* ─── THE XP REWARD STORE MODAL ─── */}
-      <Modal isOpen={isStoreOpen} onClose={() => setIsStoreOpen(false)} title="XP Reward Store">
-        <div className="flex flex-col gap-4">
-          
-          <div className="bg-[#0d0d14] border border-white/10 rounded-xl p-4 flex justify-between items-center">
-            <div>
-              <div className="text-[11px] text-white/40 uppercase tracking-widest font-bold">Wallet Balance</div>
-              <div className="text-2xl font-extrabold text-amber-400">{gamification.currentBalance.toLocaleString()} XP</div>
-            </div>
-            <div className="text-3xl drop-shadow-[0_0_10px_rgba(251,191,36,0.5)]">💳</div>
-          </div>
-
-          <div className="flex gap-1 border-b border-white/10 pb-2">
-            <button onClick={() => setStoreTab("rewards")} className={`flex-1 py-2 text-[12px] font-bold rounded-t-lg transition-colors ${storeTab === "rewards" ? 'border-b-2 border-indigo-400 text-indigo-400' : 'text-white/40 hover:text-white/70'}`}>Boosts</button>
-            <button onClick={() => setStoreTab("themes")} className={`flex-1 py-2 text-[12px] font-bold rounded-t-lg transition-colors ${storeTab === "themes" ? 'border-b-2 border-indigo-400 text-indigo-400' : 'text-white/40 hover:text-white/70'}`}>Themes</button>
-            <button onClick={() => setStoreTab("frames")} className={`flex-1 py-2 text-[12px] font-bold rounded-t-lg transition-colors ${storeTab === "frames" ? 'border-b-2 border-indigo-400 text-indigo-400' : 'text-white/40 hover:text-white/70'}`}>Frames</button>
-          </div>
-
-          {/* TAB 1: REWARDS & BOOSTS */}
-          {storeTab === "rewards" && (
-            <div className="flex flex-col gap-4 max-h-[400px] overflow-y-auto pr-2">
-              <div>
-                <div className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2 px-1">System Upgrades</div>
-                <div className="flex justify-between items-center p-3 rounded-xl border border-cyan-500/30 bg-cyan-500/10 group">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-cyan-500/20 flex items-center justify-center text-xl">🧊</div>
-                    <div>
-                      <div className="text-[13px] font-bold text-cyan-400">Streak Freeze</div>
-                      <div className="text-[10px] text-white/50 mt-0.5">Protects your streak if you miss a day. Max 2.</div>
-                    </div>
-                  </div>
-                  <button 
-                    onClick={handleBuyFreeze} 
-                    disabled={profile.streak_freezes_owned >= 2 || gamification.currentBalance < 500}
-                    className={`px-4 py-2 rounded-lg text-[12px] font-bold transition-all shrink-0 ml-2
-                      ${profile.streak_freezes_owned >= 2 ? 'bg-white/5 text-white/30 cursor-not-allowed' : 
-                      gamification.currentBalance >= 500 ? 'bg-cyan-500 text-[#0d0d14] hover:bg-cyan-400 hover:scale-105 shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-white/5 text-white/30 cursor-not-allowed'}`}
-                  >
-                    {profile.streak_freezes_owned >= 2 ? "Max Owned" : "500 XP"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-2">
-                <div className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2 px-1">Custom Real-Life Rewards</div>
-                <form onSubmit={handleCreateReward} className="bg-white/5 border border-white/10 p-3 rounded-xl flex flex-col gap-3 mb-3">
-                  <div className="flex gap-2">
-                    <input required type="text" placeholder="e.g. Order Pizza 🍕" value={newReward.title} onChange={e => setNewReward({...newReward, title: e.target.value})} className="flex-1 bg-[#0d0d14] border border-white/10 rounded-lg px-3 py-2 text-[12px] text-slate-200 outline-none focus:border-indigo-500/50" />
-                    <input required type="number" min="50" step="50" placeholder="XP Cost" value={newReward.cost} onChange={e => setNewReward({...newReward, cost: e.target.value})} className="w-24 bg-[#0d0d14] border border-white/10 rounded-lg px-3 py-2 text-[12px] text-amber-400 font-bold outline-none focus:border-amber-500/50" />
-                  </div>
-                  <button type="submit" disabled={isSubmitting} className="w-full py-2 bg-indigo-500/20 text-indigo-300 text-[12px] font-bold rounded-lg hover:bg-indigo-500/30 transition-colors">+ Create Custom Reward</button>
-                </form>
-
-                <div className="flex flex-col gap-2">
-                  {customRewards.length === 0 ? (
-                    <div className="text-center text-white/30 text-[12px] py-4">No rewards created yet.</div>
-                  ) : (
-                    customRewards.map(reward => {
-                      const canAfford = gamification.currentBalance >= reward.cost;
-                      return (
-                        <div key={reward.id} className="flex justify-between items-center p-3 rounded-xl border border-white/5 bg-[#0d0d14] group hover:border-white/10 transition-colors">
-                          <div className="flex items-center gap-3">
-                            <button onClick={() => handleDeleteReward(reward.id)} className="w-6 h-6 rounded bg-red-500/10 text-red-400 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all"><Icon d={Icons.x} size={12} /></button>
-                            <div className="text-[13px] font-bold text-slate-200">{reward.title}</div>
-                          </div>
-                          <button 
-                            onClick={() => redeemReward(reward)} disabled={!canAfford}
-                            className={`px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all flex items-center gap-1.5 shrink-0 ml-2 ${canAfford ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 hover:scale-105' : 'bg-white/5 text-white/30 cursor-not-allowed'}`}
-                          >
-                            {reward.cost} XP
-                          </button>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: THEMES */}
-          {storeTab === "themes" && (
-            <div className="flex flex-col gap-3 max-h-[400px] overflow-y-auto pr-2">
-              <p className="text-[12px] text-white/50 mb-2">Spend XP to unlock global color themes for your entire dashboard. This uses advanced CSS hue-rotation!</p>
-              
-              {Object.entries(THEME_OPTIONS).map(([key, config]) => {
-                const isUnlocked = userSettings.unlocked_themes.includes(key);
-                const isActive = userSettings.active_theme === key;
-                const canAfford = gamification.currentBalance >= config.cost;
-
-                return (
-                  <div key={key} className={`flex justify-between items-center p-4 rounded-xl border transition-all ${isActive ? 'bg-indigo-500/10 border-indigo-500/50' : 'bg-[#0d0d14] border-white/5 hover:border-white/10'}`}>
-                    <div>
-                      <div className="text-[14px] font-bold text-slate-200">{config.name}</div>
-                      <div className="text-[11px] text-white/40 mt-0.5">{isUnlocked ? '🔓 Unlocked permanently' : `🔒 Costs ${config.cost.toLocaleString()} XP`}</div>
-                    </div>
-                    
-                    <button 
-                      onClick={() => handleBuyOrEquipTheme(key, config)}
-                      disabled={!isUnlocked && !canAfford}
-                      className={`px-4 py-2 rounded-lg text-[12px] font-bold transition-all shadow-sm ${isActive ? 'bg-indigo-500 text-white cursor-default' : isUnlocked ? 'bg-white/10 text-white hover:bg-white/20' : canAfford ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30' : 'bg-white/5 text-white/20 cursor-not-allowed'}`}
-                    >
-                      {isActive ? 'Equipped ✓' : isUnlocked ? 'Equip Theme' : `Buy (${config.cost} XP)`}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* ─── TAB 3: AVATAR FRAMES ─── */}
-          {storeTab === "frames" && (
-            <div className="flex flex-col gap-3 max-h-[400px] overflow-y-auto pr-2">
-              <p className="text-[12px] text-white/50 mb-2">Buy cosmetic borders to show off your prestige on the Leaderboard and Topbar!</p>
-              
-              <div className="grid grid-cols-2 gap-4">
-                {SHOP_FRAMES.map(frame => {
-                  const isUnlocked = profile.owned_frames?.includes(frame.id) || frame.id === "none";
-                  const isActive = profile.equipped_frame === frame.id;
-                  const canAfford = gamification.currentBalance >= frame.cost;
-
-                  return (
-                    <div key={frame.id} className={`flex flex-col items-center p-4 rounded-xl border transition-all ${isActive ? 'bg-indigo-500/10 border-indigo-500/50 shadow-md' : 'bg-[#0d0d14] border-white/5 hover:border-white/10'}`}>
-                      
-                      <div className="mb-4">
-                        <div className={`w-14 h-14 rounded-full flex items-center justify-center ${frame.class}`}>
-                          <div className="w-full h-full rounded-full bg-slate-800 flex items-center justify-center text-lg font-bold text-slate-300">
-                            {getInitials()}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="text-center mb-3">
-                        <div className="text-[13px] font-bold text-slate-200">{frame.name}</div>
-                        <div className={`text-[10px] font-bold mt-0.5 ${isUnlocked ? 'text-green-400' : 'text-amber-400'}`}>
-                          {isUnlocked ? "OWNED" : `${frame.cost.toLocaleString()} XP`}
-                        </div>
-                      </div>
-                      
-                      <button 
-                        onClick={() => handleBuyOrEquipFrame(frame)}
-                        disabled={(!isUnlocked && !canAfford) || isActive}
-                        className={`w-full py-1.5 rounded-lg text-[11px] font-bold transition-all shadow-sm ${isActive ? 'bg-indigo-500/20 text-indigo-300 cursor-default' : isUnlocked ? 'bg-white/10 text-white hover:bg-white/20' : canAfford ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30' : 'bg-white/5 text-white/20 cursor-not-allowed'}`}
-                      >
-                        {isActive ? 'Equipped' : isUnlocked ? 'Equip' : `Buy`}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      </Modal>
+      {/* 🛒 MODULAR STORE MODAL */}
+      <StoreModal 
+        isStoreOpen={isStoreOpen} setIsStoreOpen={setIsStoreOpen} gamification={gamification}
+        storeTab={storeTab} setStoreTab={setStoreTab} profile={profile}
+        handleBuyFreeze={handleBuyFreeze} newReward={newReward} setNewReward={setNewReward}
+        handleCreateReward={handleCreateReward} isSubmitting={isSubmitting} customRewards={customRewards}
+        handleDeleteReward={handleDeleteReward} redeemReward={redeemReward} userSettings={userSettings}
+        handleBuyOrEquipTheme={handleBuyOrEquipTheme} THEME_OPTIONS={THEME_OPTIONS} SHOP_FRAMES={SHOP_FRAMES}
+        getInitials={getInitials} handleBuyOrEquipFrame={handleBuyOrEquipFrame}
+        habits={habits} goals={goals} totalXp={profile.total_xp}
+      />
 
       {/* MODALS */}
       <Modal isOpen={isHabitModalOpen} onClose={() => setIsHabitModalOpen(false)} title="Create Daily Habit">
@@ -596,16 +544,16 @@ export default function Goals() {
         </form>
       </Modal>
 
-      <Modal isOpen={isGoalModalOpen} onClose={() => setIsGoalModalOpen(false)} title="Set a Personal Goal">
-        <form onSubmit={handleAddGoal} className="flex flex-col gap-5">
-          <div><label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-1.5">Goal Title *</label><input required type="text" value={newGoal.title} onChange={e => setNewGoal({...newGoal, title: e.target.value})} className="w-full bg-[#0d0d14] border border-white/10 rounded-xl px-4 py-3 text-slate-200 text-[13px] outline-none focus:border-indigo-500/50" /></div>
-          <div><label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-1.5">Target Deadline *</label><input required type="date" value={newGoal.deadline} onChange={e => setNewGoal({...newGoal, deadline: e.target.value})} className="w-full bg-[#0d0d14] border border-white/10 rounded-xl px-4 py-3 text-slate-200 text-[13px] outline-none focus:border-indigo-500/50 [color-scheme:dark]" /></div>
-          <div><label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-2">Choose Emoji</label>
-            <div className="flex flex-wrap gap-2">{EMOJI_LIST.map(emoji => (<button key={emoji} type="button" onClick={() => setNewGoal({...newGoal, emoji: emoji})} className={`w-11 h-11 shrink-0 rounded-xl text-xl transition-all ${newGoal.emoji === emoji ? 'bg-indigo-500/20 border border-indigo-500/50 scale-110 shadow-md' : 'bg-[#0d0d14] border border-white/5 hover:bg-white/5 hover:scale-105'}`}>{emoji}</button>))}</div>
-          </div>
-          <button type="submit" disabled={isSubmitting} className="w-full mt-2 bg-gradient-to-br from-indigo-500 to-purple-500 text-white font-bold text-[13px] py-3.5 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50">Set Goal</button>
-        </form>
-      </Modal>
+      {/* 🧠 MODULAR SMART GOAL MODAL */}
+      <AddGoalModal 
+        isOpen={isGoalModalOpen}
+        onClose={() => setIsGoalModalOpen(false)}
+        handleAddGoal={handleAddGoal}
+        newGoal={newGoal}
+        setNewGoal={setNewGoal}
+        isSubmitting={isSubmitting}
+        EMOJI_LIST={EMOJI_LIST}
+      />
 
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 bg-green-500/10 border border-green-500/30 text-green-400 px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-[fadeIn_0.3s_ease-out]">

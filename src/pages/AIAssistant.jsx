@@ -3,6 +3,8 @@ import { Icon, Icons } from "../components/ui/Icon";
 import Modal from "../components/ui/Modal";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
+import AISidebar from "../components/ai/AISidebar";
+import SyllabusParserModal from "../components/ai/SyllabusParserModal";
 
 const PERSONAS = {
   standard: { id: "standard", name: "GradPilot Base", icon: "🤖", cost: 0, desc: "Helpful and polite." },
@@ -36,29 +38,9 @@ export default function AIAssistant() {
       document.title = "Ai Assitant | GradPilot";
     }, []);
 
-  // Chat State (with 24-hour LocalStorage memory)
-  const [messages, setMessages] = useState(() => {
-    const savedChat = localStorage.getItem('gradpilot_ai_chat');
-    if (savedChat) {
-      try {
-        const { data, timestamp } = JSON.parse(savedChat);
-        const isExpired = Date.now() - timestamp > 24 * 60 * 60 * 1000; // 24 hours
-        if (!isExpired) return data;
-        localStorage.removeItem('gradpilot_ai_chat');
-      } catch (error) {
-        console.error("Failed to parse chat history", error);
-      }
-    }
-    return [{ role: "ai", text: "Welcome to the AI Study Assistant. I'm connected to your academic database. How can I help you dominate your classes today?" }];
-  });
+  // ─── AI MEMORY (Database State) ───
+  const [messages, setMessages] = useState([]);
 
-  // Auto-save chat to browser memory whenever it changes
-  useEffect(() => {
-    localStorage.setItem('gradpilot_ai_chat', JSON.stringify({
-      data: messages,
-      timestamp: Date.now()
-    }));
-  }, [messages]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef(null);
@@ -78,29 +60,42 @@ export default function AIAssistant() {
   // ─── FETCH ALL DATA ───
   useEffect(() => {
     const fetchAll = async () => {
+      if (!user?.id) return; // 🐛 Bug 1 Fix: Strict safety guard
       setLoading(true);
       
-      const [ { data: tData }, { data: hData }, { data: gData }, { data: sData }, { data: sessionData }, { data: pData }, { data: eData } ] = await Promise.all([
+      const [ tRes, hRes, gRes, sRes, sessionRes, pRes, eRes, chatRes ] = await Promise.all([
         supabase.from('tasks').select('*').eq('user_id', user.id),
         supabase.from('habits').select('*').eq('user_id', user.id),
         supabase.from('goals').select('*').eq('user_id', user.id),
         supabase.from('user_settings').select('*').eq('user_id', user.id).single(),
         supabase.from('study_sessions').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
-        supabase.from('profiles').select('*').eq('id', user.id).single(), // 🚀 NEW: Changed to select('*') to get the budget
-        supabase.from('expenses').select('*').eq('user_id', user.id) // 🚀 NEW: Fetching expenses
+        supabase.from('profiles').select('*').eq('id', user.id).single(),
+        supabase.from('expenses').select('*').eq('user_id', user.id),
+        supabase.from('chat_history').select('role, text').eq('user_id', user.id).order('created_at', { ascending: true }) // 🚀 NEW!
       ]);
       
-      if (tData) setTasks(tData);
-      if (hData) setHabits(hData);
-      if (gData) setGoals(gData);
-      if (sData) setUserSettings(sData);
-      if (sessionData) setStudySessions(sessionData);
-      if (pData) setProfile(pData); 
-      if (eData) setExpenses(eData);
+      [tRes, hRes, gRes, sRes, sessionRes, pRes, eRes, chatRes].forEach(res => {
+        if (res.error && res.error.code !== 'PGRST116') console.error("DB Fetch Error:", res.error.message);
+      });
+
+      if (tRes.data) setTasks(tRes.data);
+      if (hRes.data) setHabits(hRes.data);
+      if (gRes.data) setGoals(gRes.data);
+      if (sRes.data) setUserSettings(sRes.data);
+      if (sessionRes.data) setStudySessions(sessionRes.data);
+      if (pRes.data) setProfile(pRes.data); 
+      if (eRes.data) setExpenses(eRes.data);
+      
+      // Load history, or set a default greeting if it's their first time
+      if (chatRes.data && chatRes.data.length > 0) {
+        setMessages(chatRes.data);
+      } else {
+        setMessages([{ role: "ai", text: "Welcome to the AI Study Assistant. I'm connected to your academic database. How can I help you dominate your classes today?" }]);
+      }
       
       setLoading(false);
     };
-    if (user) fetchAll();
+    fetchAll();
   }, [user]);
 
   useEffect(() => {
@@ -109,8 +104,10 @@ export default function AIAssistant() {
 
   // ─── XP MATH ───
   const { currentBalance, activePersona, unlockedPersonas } = useMemo(() => {
-    // Start earned tally with the Focus Timer XP from the Profile
-    let earned = profile?.total_xp || 0; 
+    // 🐛 Bug 3 Fix: Loading fallback to prevent temporary wrong XP
+    if (!profile) return { currentBalance: 0, activePersona: 'standard', unlockedPersonas: ['standard'] };
+
+    let earned = profile.total_xp || 0; 
     
     habits.forEach(h => earned += (h.streak * 50));
     goals.forEach(g => { earned += (g.progress === 100 ? 500 : g.progress * 5); });
@@ -188,9 +185,32 @@ export default function AIAssistant() {
     }
   };
 
+  // ─── CLEAR CHAT HISTORY ───
+  const handleClearChat = async () => {
+    if (!window.confirm("Are you sure you want to permanently delete your chat history?")) return;
+
+    // 1. Optimistically reset the UI immediately
+    setMessages([{ role: "ai", text: "Chat history cleared. How can I help you today?" }]);
+
+    // 2. Wipe it from the Supabase database
+    try {
+      const { error } = await supabase
+        .from('chat_history')
+        .delete()
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+    } catch (error) {
+      console.error("Failed to clear chat history:", error);
+      alert("Failed to clear history on the server. Please try again.");
+    }
+  };
+
   // ─── MAIN CHAT HANDLER ───
   const handleSendMessage = async (e, forcedText = null, actionCost = 0) => {
     if (e) e.preventDefault();
+    if (isTyping) return; // 🐛 Bug 7 Fix: Rate Limiting / Spam Protection
+
     const textToSend = forcedText || input;
     if (!textToSend.trim()) return;
 
@@ -212,7 +232,10 @@ export default function AIAssistant() {
       await deductXP(finalCost);
     }
 
-    setMessages(prev => [...prev, { role: "user", text: textToSend }]);
+    // Update UI and save User message to Database
+    const newUserMsg = { role: "user", text: textToSend };
+    setMessages(prev => [...prev, newUserMsg]);
+    supabase.from('chat_history').insert([{ user_id: user.id, ...newUserMsg }]).then();
     setInput("");
     setIsTyping(true);
 
@@ -225,29 +248,74 @@ export default function AIAssistant() {
         const recentMoods = studySessions.map(s => `${s.subject}: ${s.duration_minutes}m (${s.mood})`).join(", ");
         finalPrompt = `You are an elite academic coach. Analyze the user's data: Pending Tasks: ${pendingTasks.length}, Missed Habits: ${missedHabits.map(h => h.name).join(', ') || "None"}. Recent Sessions: ${recentMoods || "None"}. Provide a personalized 3-step action plan under 100 words.`;
       } 
-      // 🚀 THE NEW AUDIT COMMAND 🚀
+      // 🚀 ADVANCED FINANCIAL AUDITOR 🚀
       else if (textToSend === "/audit") {
-        const spentThisMonth = expenses
-          .filter(exp => new Date(exp.date).getMonth() === new Date().getMonth())
-          .reduce((acc, exp) => acc + Number(exp.amount), 0);
+        const currentMonthExp = expenses.filter(exp => new Date(exp.date).getMonth() === new Date().getMonth());
+        const spentThisMonth = currentMonthExp.reduce((acc, exp) => acc + Number(exp.amount), 0);
+        const budget = profile?.monthly_budget || 7000;
+
+        // 1. Burn Rate Math
+        const todayNum = new Date().getDate();
+        const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+        const safeDailyBurn = budget / daysInMonth;
+        const actualDailyBurn = spentThisMonth / Math.max(1, todayNum); 
+        const projectedSpend = actualDailyBurn * daysInMonth;
+
+        // 2. Category Breakdown (Find the leak)
+        const categoryTotals = currentMonthExp.reduce((acc, exp) => {
+          acc[exp.category] = (acc[exp.category] || 0) + Number(exp.amount);
+          return acc;
+        }, {});
         
-        const recentExp = expenses.slice(0, 5).map(exp => `${exp.category}: ₹${exp.amount}`).join(", ");
+        // Sort categories to find where they waste the most money
+        const topCategory = Object.keys(categoryTotals).sort((a, b) => categoryTotals[b] - categoryTotals[a])[0] || "None";
+        const topCategorySpend = categoryTotals[topCategory] || 0;
+
+        finalPrompt = `You are a strict, elite financial auditor. 
+        Data: Budget is ₹${budget}. Spent: ₹${spentThisMonth}.
+        Pacing: They are burning ₹${Math.round(actualDailyBurn)}/day (Safe limit is ₹${Math.round(safeDailyBurn)}/day).
+        Projected month-end spend: ₹${Math.round(projectedSpend)}.
+        Top spending category: ${topCategory} (₹${topCategorySpend}).
         
-        finalPrompt = `You are a strict, highly analytical financial advisor. The user's monthly budget is ₹${profile?.monthly_budget || 7000}. They have spent ₹${spentThisMonth} this month. Recent purchases: ${recentExp}. Give them a punchy, brutal financial audit. Warn them if they are burning cash too fast. Under 100 words.`;
+        Write a brutal, data-driven financial audit. If their projected spend exceeds their budget, specifically rip into their ${topCategory} spending. Keep it punchy, insightful, and under 100 words.`;
       }
       else if (textToSend === "/studyplan") {
-        finalPrompt = `You are an academic advisor. Student has pending assignments: ${JSON.stringify(pendingTasks.map(t => t.title))}. Generate a short 1-day study plan. Under 100 words.`;
+        // Feed the AI rich data instead of just titles
+        const taskDetails = pendingTasks.map(t => `[${t.priority.toUpperCase()}] ${t.title} (Due: ${t.due})`).join(" | ");
+        
+        finalPrompt = `You are an elite academic advisor. 
+        Context: The student needs a study plan. Their pending tasks are: ${taskDetails || "None currently"}.
+        Task: Create a highly optimized, realistic 1-day study schedule. 
+        Rules: 
+        1. Prioritize tasks marked as HIGH or those due soonest.
+        2. Use Markdown bullet points grouped by time blocks (e.g., 🌞 Morning, ☕ Afternoon).
+        3. Include short breaks.
+        4. Keep it highly actionable, encouraging, and strictly under 150 words.`;
       } 
       else if (textToSend === "/roast") {
-        finalPrompt = `You are a savage AI. Roast the student. They have ${pendingTasks.length} pending assignments and missed these habits today: ${JSON.stringify(missedHabits.map(h => h.name))}. Keep it funny and brutal. Under 80 words.`;
+        finalPrompt = `You are a savage, sarcastic AI productivity coach. 
+        Context: The student is slacking. They have ${pendingTasks.length} pending assignments and completely ignored these daily habits today: ${missedHabits.map(h => h.name).join(', ') || "None"}. 
+        Task: Roast them ruthlessly for their laziness. Use sharp wit, make fun of their procrastination, and tell them to close YouTube and get to work. 
+        Rules: Keep it extremely punchy, brutal, and strictly under 80 words. Zero pleasantries.`;
       } 
       else {
-        let personaContext = "You are a helpful AI study assistant.";
-        if (activePersona === 'eli5') personaContext = "Explain everything simply like I'm 5 years old.";
-        if (activePersona === 'socratic') personaContext = "Ask guiding questions to help me arrive at the answer myself.";
-        if (activePersona === 'strict') personaContext = "Be a strict, demanding university professor.";
+        // Upgraded Personas with behavioral constraints
+        let personaContext = "You are GradPilot Base, a highly efficient, concise, and supportive academic assistant.";
+        
+        if (activePersona === 'eli5') {
+          personaContext = "You are a friendly tutor. Rule: Explain complex concepts so simply that a 5-year-old could understand. Use fun analogies and strictly avoid academic jargon.";
+        }
+        if (activePersona === 'socratic') {
+          personaContext = "You are a Socratic tutor. Rule: DO NOT give direct answers. Instead, ask probing, step-by-step questions to guide the student to discover the answer themselves.";
+        }
+        if (activePersona === 'strict') {
+          personaContext = "You are a demanding, no-nonsense university professor. Rule: Your tone is formal, dry, and slightly impatient. Expect excellence, do not coddle the student, and give brutally direct feedback.";
+        }
 
-        finalPrompt = `${personaContext}\n\nUser: ${textToSend}`;
+        finalPrompt = `System Context: ${personaContext}
+        Formatting Rule: Always use Markdown (bolding, lists) for readability. Keep responses under 150 words unless the user explicitly asks for a long essay.
+        
+        User Query: ${textToSend}`;
       }
 
       // Secure Backend Inference
@@ -257,12 +325,16 @@ export default function AIAssistant() {
 
       if (error) throw error;
 
-      setMessages(prev => [...prev, { role: "ai", text: data.reply }]);
+      // Update UI and save AI message to Database
+      const newAiMsg = { role: "ai", text: data.reply };
+      setMessages(prev => [...prev, newAiMsg]);
+      supabase.from('chat_history').insert([{ user_id: user.id, ...newAiMsg }]).then();
 
     } catch (error) {
       console.error(error);
       if (finalCost > 0) {
-        const refund = (userSettings?.xp_spent || 0) - finalCost;
+      // 🐛 Bug 5 Fix: Math.max prevents negative spent XP
+        const refund = Math.max(0, (userSettings?.xp_spent || 0) - finalCost);
         setUserSettings(prev => ({ ...prev, xp_spent: refund }));
         await supabase.from('user_settings').update({ xp_spent: refund }).eq('user_id', user.id);
       }
@@ -272,7 +344,43 @@ export default function AIAssistant() {
     }
   };
 
-  if (loading) return <div className="flex h-[80vh] items-center justify-center text-white/40">Initializing AI Core...</div>;
+  // ─── LOADING SKELETON UI ───
+  if (loading) return (
+    <div className="flex flex-col gap-6 relative h-[calc(100vh-100px)] animate-[pulse_1.5s_ease-in-out_infinite]">
+      
+      {/* Header Skeleton */}
+      <div className="flex justify-between items-center bg-white/5 border border-white/10 p-4 rounded-2xl shrink-0">
+        <div className="flex flex-col gap-2">
+          <div className="h-6 w-48 bg-white/10 rounded-lg"></div>
+          <div className="h-3 w-32 bg-white/5 rounded-lg"></div>
+        </div>
+        <div className="h-10 w-24 bg-white/10 rounded-xl"></div>
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-6 flex-1 min-h-0">
+        
+        {/* Chat Interface Skeleton */}
+        <div className="flex-1 bg-[#0d0d14] border border-white/10 rounded-3xl p-6 flex flex-col gap-6 shadow-2xl relative">
+          <div className="flex gap-4 max-w-[85%]">
+            <div className="w-10 h-10 rounded-2xl bg-white/10 shrink-0"></div>
+            <div className="h-20 w-64 bg-white/5 rounded-2xl rounded-tl-none"></div>
+          </div>
+          <div className="flex gap-4 max-w-[85%] ml-auto flex-row-reverse">
+            <div className="w-10 h-10 rounded-2xl bg-white/10 shrink-0"></div>
+            <div className="h-12 w-48 bg-white/10 rounded-2xl rounded-tr-none"></div>
+          </div>
+          <div className="mt-auto h-14 w-full bg-white/5 border border-white/10 rounded-2xl"></div>
+        </div>
+
+        {/* Sidebar Skeleton */}
+        <div className="w-full lg:w-80 flex flex-col gap-4 shrink-0">
+          <div className="h-[250px] bg-white/5 border border-white/10 rounded-3xl p-5"></div>
+          <div className="flex-1 bg-white/5 border border-white/10 rounded-3xl p-5"></div>
+        </div>
+
+      </div>
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-6 relative h-[calc(100vh-100px)]">
@@ -285,9 +393,22 @@ export default function AIAssistant() {
           </h2>
           <p className="text-white/40 text-[12px] font-medium">Powered by Gemini & Groq</p>
         </div>
-        <div className="bg-[#0d0d14] border border-white/10 px-4 py-2 rounded-xl flex items-center gap-2 shadow-inner">
-          <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Wallet</span>
-          <span className="text-[14px] font-extrabold text-amber-400">{currentBalance.toLocaleString()} XP</span>
+        <div className="flex items-center gap-3">
+          
+          {/* 🚀 NEW CLEAR CHAT BUTTON */}
+          <button 
+            onClick={handleClearChat}
+            disabled={isTyping || messages.length <= 1}
+            className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/40 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/30 transition-all text-[12px] font-bold disabled:opacity-30"
+            title="Delete Chat History"
+          >
+            🗑️ <span className="hidden lg:inline">Clear Chat</span>
+          </button>
+
+          <div className="bg-[#0d0d14] border border-white/10 px-4 py-2 rounded-xl flex items-center gap-2 shadow-inner">
+            <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Wallet</span>
+            <span className="text-[14px] font-extrabold text-amber-400">{currentBalance.toLocaleString()} XP</span>
+          </div>
         </div>
       </div>
 
@@ -343,99 +464,29 @@ export default function AIAssistant() {
           </form>
         </div>
 
-        {/* ─── SIDEBAR: AI STORE & COMMANDS ─── */}
-        <div className="w-full lg:w-80 flex flex-col gap-4 shrink-0 overflow-y-auto pr-1">
-          
-          {/* SMART ACTIONS */}
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-5">
-            <h3 className="text-slate-100 font-semibold text-[14px] mb-4 flex items-center gap-2">
-              <span className="text-indigo-400">⚡</span> Premium Actions
-            </h3>
-            <div className="flex flex-col gap-3">
-              {SMART_ACTIONS.map(action => {
-                const canAfford = currentBalance >= action.cost;
-                return (
-                  <button 
-                    key={action.id} onClick={() => handleSendMessage(null, action.command, action.cost)}
-                    disabled={isTyping || !canAfford}
-                    className="flex items-center justify-between p-3 rounded-xl bg-[#0d0d14] border border-white/5 hover:border-indigo-500/30 transition-all text-left group disabled:opacity-50 disabled:hover:border-white/5"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-lg">{action.icon}</span>
-                      <span className={`text-[12px] font-bold text-slate-200 transition-colors ${action.id === 'parse' ? 'group-hover:text-green-400' : 'group-hover:text-indigo-300'}`}>{action.name}</span>
-                    </div>
-                    <div className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-2 py-1 rounded-md">-{action.cost} XP</div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* PERSONA SHOP */}
-          <div className="bg-white/5 border border-white/10 rounded-3xl p-5 flex-1">
-            <h3 className="text-slate-100 font-semibold text-[14px] mb-1 flex items-center gap-2">
-              <span className="text-purple-400">🎭</span> AI Personas
-            </h3>
-            <p className="text-[11px] text-white/40 mb-4">Unlock different teaching styles.</p>
-            
-            <div className="flex flex-col gap-3">
-              {Object.entries(PERSONAS).map(([id, p]) => {
-                const isUnlocked = unlockedPersonas.includes(id);
-                const isActive = activePersona === id;
-                const canAfford = currentBalance >= p.cost;
-
-                return (
-                  <div key={id} className={`p-3 rounded-xl border transition-all ${isActive ? 'bg-indigo-500/10 border-indigo-500/50 shadow-md' : 'bg-[#0d0d14] border-white/5'}`}>
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="text-2xl bg-white/5 w-10 h-10 flex items-center justify-center rounded-xl">{p.icon}</span>
-                      <div className="min-w-0">
-                        <div className="text-[13px] font-bold text-slate-200 truncate">{p.name}</div>
-                        <div className="text-[10px] text-white/40 leading-tight pr-1">{p.desc}</div>
-                      </div>
-                    </div>
-                    
-                    <button 
-                      onClick={() => isUnlocked ? equipPersona(id) : unlockPersona(id, p.cost)}
-                      disabled={(!isUnlocked && !canAfford) || isActive}
-                      className={`w-full py-2 rounded-lg text-[11px] font-bold transition-all ${isActive ? 'bg-indigo-500/20 text-indigo-300 cursor-default' : isUnlocked ? 'bg-white/10 text-white hover:bg-white/20' : canAfford ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30' : 'bg-white/5 text-white/20 cursor-not-allowed'}`}
-                    >
-                      {isActive ? 'Active' : isUnlocked ? 'Equip Persona' : `Unlock (${p.cost} XP)`}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+        {/* ─── MODULARIZED SIDEBAR ─── */}
+        <AISidebar 
+          currentBalance={currentBalance}
+          activePersona={activePersona}
+          unlockedPersonas={unlockedPersonas}
+          isTyping={isTyping}
+          handleSendMessage={handleSendMessage}
+          equipPersona={equipPersona}
+          unlockPersona={unlockPersona}
+          PERSONAS={PERSONAS}
+          SMART_ACTIONS={SMART_ACTIONS}
+        />
       </div>
 
-      {/* ─── THE NEW SYLLABUS PARSER MODAL ─── */}
-      <Modal isOpen={isParserOpen} onClose={() => setIsParserOpen(false)} title="Syllabus Auto-Parser">
-        <form onSubmit={handleParseSyllabus} className="flex flex-col gap-4">
-          <div>
-            <p className="text-[13px] text-white/60 mb-4 leading-relaxed">
-              Paste the text from your course syllabus below. AI Agent will scan it, extract all assignment names and due dates, and magically add them to your Kanban board!
-            </p>
-            <textarea 
-              value={syllabusText} 
-              onChange={(e) => setSyllabusText(e.target.value)}
-              placeholder="Paste syllabus text here (e.g., 'Midterm Exam is on Oct 14th. Final Essay due Nov 2nd...')"
-              className="w-full h-48 bg-[#0d0d14] border border-white/10 rounded-xl p-4 text-slate-200 text-[13px] outline-none focus:border-indigo-500/50 resize-none transition-colors leading-relaxed"
-            />
-          </div>
-          <button 
-            type="submit" 
-            disabled={isParsing || !syllabusText.trim()}
-            className="w-full flex items-center justify-center gap-2 bg-gradient-to-br from-green-500 to-emerald-600 text-white font-bold text-[13px] py-3.5 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 shadow-lg shadow-green-500/20"
-          >
-            {isParsing ? (
-              <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Analyzing Syllabus...</>
-            ) : (
-              <>✨ Extract & Add Tasks</>
-            )}
-          </button>
-        </form>
-      </Modal>
+      {/* ─── MODULARIZED SYLLABUS PARSER ─── */}
+      <SyllabusParserModal 
+        isOpen={isParserOpen}
+        onClose={() => setIsParserOpen(false)}
+        syllabusText={syllabusText}
+        setSyllabusText={setSyllabusText}
+        handleParseSyllabus={handleParseSyllabus}
+        isParsing={isParsing}
+      />
 
     </div>
   );

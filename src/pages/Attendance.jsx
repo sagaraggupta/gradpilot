@@ -5,6 +5,13 @@ import Modal from "../components/ui/Modal";
 import { Icon, Icons } from "../components/ui/Icon";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
+import SubjectCard from "../components/attendance/SubjectCard";
+import AIPredictorCard from "../components/attendance/AIPredictorCard";
+import AttendanceStats from "../components/attendance/AttendanceStats";
+import SmartAlerts from "../components/attendance/SmartAlerts";
+import { AddSubjectModal, EditSubjectModal } from "../components/attendance/AttendanceModals";
+import TodaySchedule from "../components/attendance/TodaySchedule";
+import AttendanceTrends from "../components/attendance/AttendanceTrends";
 
 export default function Attendance() {
   const { user } = useAuth();
@@ -17,6 +24,8 @@ export default function Attendance() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
+  // ─── ANTI-SPAM STATE ───
+  const [updatingIds, setUpdatingIds] = useState(new Set());
   
   // Forms (Now including 'days' array)
   const [newSubject, setNewSubject] = useState({ subject: "", present: 0, total: 0, required: 75, days: [] });
@@ -34,14 +43,22 @@ export default function Attendance() {
   }, [user]);
 
   const fetchAttendance = async () => {
+    if (!user?.id) return; // 🐛 Bug 1 Fix: CRITICAL Null guard
+    
     setLoading(true);
     const { data, error } = await supabase
       .from('attendance')
       .select('*')
-      .eq('user_id', user.id) // 🔒 CRITICAL FIX: Scoped to the user!
+      .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
-    if (data) setSubjects(data);
+    // 🐛 Bug 2 Fix: Handle errors instead of silently ignoring them
+    if (error) {
+      console.error("Fetch error:", error);
+      showToast("Failed to load attendance.", "error");
+    } else if (data) {
+      setSubjects(data);
+    }
     setLoading(false);
   };
 
@@ -60,15 +77,64 @@ export default function Attendance() {
     }
   };
 
-  // ─── QUICK ACTIONS (Present / Absent) ──────────────────────────────────────
+  // ─── QUICK ACTIONS & UNDO ──────────────────────────────────────────────────
   const markAttendance = async (id, type) => {
+    if (updatingIds.has(id)) return; 
+    setUpdatingIds(prev => new Set(prev).add(id));
+
     const subject = subjects.find(s => s.id === id);
-    const newTotal = subject.total + 1;
-    const newPresent = type === 'present' ? subject.present + 1 : subject.present;
+    const previousSubjects = [...subjects]; 
+
+    // Smart logic: If 'undo', decrease total by 1. If present > 0, decrease present by 1.
+    const newTotal = type === 'undo' ? Math.max(0, subject.total - 1) : subject.total + 1;
+    let newPresent = subject.present;
+    if (type === 'present') newPresent += 1;
+    if (type === 'undo' && subject.present > 0) newPresent -= 1; 
 
     setSubjects(prev => prev.map(s => s.id === id ? { ...s, total: newTotal, present: newPresent } : s));
-    await supabase.from('attendance').update({ total: newTotal, present: newPresent }).eq('id', id).eq('user_id', user.id);
-    showToast(`Marked ${type} for ${subject.subject}`);
+    
+    const { error } = await supabase.from('attendance').update({ total: newTotal, present: newPresent }).eq('id', id).eq('user_id', user.id);
+    
+    if (error) {
+      setSubjects(previousSubjects); 
+      showToast("Failed to update. Try again.", "error");
+    } else {
+      showToast(type === 'undo' ? `Undid last action for ${subject.subject}` : `Marked ${type} for ${subject.subject}`);
+    }
+
+    setUpdatingIds(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  // 🚀 NEW: BULK MARK TODAY (Improvement #5)
+  const handleBulkMarkToday = async () => {
+    const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'short' });
+    const todaySubjects = subjects.filter(s => s.days?.includes(todayStr));
+
+    if (todaySubjects.length === 0) {
+      return showToast(`No classes officially scheduled for today (${todayStr}).`, "error");
+    }
+    if (!window.confirm(`Mark you as "Present" for all ${todaySubjects.length} classes scheduled for today?`)) return;
+
+    const previousSubjects = [...subjects];
+    const subjectIds = todaySubjects.map(s => s.id);
+
+    // Optimistic Update
+    setSubjects(prev => prev.map(s => subjectIds.includes(s.id) ? { ...s, total: s.total + 1, present: s.present + 1 } : s));
+
+    try {
+      // Execute all updates in parallel
+      await Promise.all(todaySubjects.map(s => 
+        supabase.from('attendance').update({ total: s.total + 1, present: s.present + 1 }).eq('id', s.id).eq('user_id', user.id)
+      ));
+      showToast(`Bulk marked ${todaySubjects.length} subjects present! 🔥`);
+    } catch (error) {
+      setSubjects(previousSubjects);
+      showToast("Bulk update failed.", "error");
+    }
   };
 
   // ─── ADD SUBJECT ──────────────────────────────────────────────────────────
@@ -149,16 +215,27 @@ export default function Attendance() {
     showToast("Subject deleted.");
   };
 
-  // ─── CALCULATIONS ─────────────────────────────────────────────────────────
-  const totalClasses = subjects.reduce((acc, curr) => acc + curr.total, 0);
-  const totalPresent = subjects.reduce((acc, curr) => acc + curr.present, 0);
-  const overallPct = totalClasses > 0 ? Math.round((totalPresent / totalClasses) * 100) : 0;
-  
-  const subjectsAtRisk = subjects.filter(s => s.total > 0 && Math.round((s.present / s.total) * 100) < s.required).length;
+// ─── CALCULATIONS & MEMOIZATION ───────────────────────────────────────────
+  // 🚀 Improvement 7 & Bug 5 Fix: useMemo and safe division
+  const stats = React.useMemo(() => {
+    const totalClasses = subjects.reduce((acc, curr) => acc + (Number(curr.total) || 0), 0);
+    const totalPresent = subjects.reduce((acc, curr) => acc + (Number(curr.present) || 0), 0);
+    
+    // Safe division to prevent Infinity/NaN bugs
+    const overallPct = totalClasses > 0 ? Math.round((totalPresent / totalClasses) * 100) : 0;
+    
+    const subjectsAtRisk = subjects.filter(s => {
+      if (!s.total || s.total <= 0) return false;
+      const pct = Math.round((s.present / s.total) * 100);
+      return pct < s.required;
+    }).length;
 
-  const statusState = subjects.length === 0 ? "No Data" : (subjectsAtRisk > 0 ? "Warning" : "Safe");
-  const statusSub = subjects.length === 0 ? "Add a subject" : (subjectsAtRisk > 0 ? "Need to attend more" : "All targets met!");
-  const statusColor = subjects.length === 0 ? "#818cf8" : (subjectsAtRisk > 0 ? "#f87171" : "#4ade80");
+    const statusState = subjects.length === 0 ? "No Data" : (subjectsAtRisk > 0 ? "Warning" : "Safe");
+    const statusSub = subjects.length === 0 ? "Add a subject" : (subjectsAtRisk > 0 ? "Need to attend more" : "All targets met!");
+    const statusColor = subjects.length === 0 ? "#818cf8" : (subjectsAtRisk > 0 ? "#f87171" : "#4ade80");
+
+    return { totalClasses, totalPresent, overallPct, subjectsAtRisk, statusState, statusSub, statusColor };
+  }, [subjects]);
 
   return (
     <div className="flex flex-col gap-5 relative pb-10">
@@ -169,21 +246,43 @@ export default function Attendance() {
           <h2 className="text-slate-100 font-bold text-[22px] font-['Sora']">Attendance Tracker</h2>
           <p className="text-white/40 text-[13px] mt-0.5">Manage your class targets</p>
         </div>
-        <button 
-          onClick={() => { setErrors({}); setIsAddModalOpen(true); }}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-xs font-semibold hover:opacity-90 transition-opacity shadow-lg shadow-indigo-500/20"
-        >
-          <Icon d={Icons.plus} size={14} /> Add Subject
-        </button>
+        <div className="flex gap-2">
+          {/* 🚀 NEW BULK BUTTON */}
+          <button 
+            onClick={handleBulkMarkToday}
+            className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 text-xs font-semibold hover:bg-green-500/20 transition-all"
+          >
+            ✓ Mark Today's Classes
+          </button>
+          
+          <button 
+            onClick={() => { setErrors({}); setIsAddModalOpen(true); }}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-xs font-semibold hover:opacity-90 transition-opacity shadow-lg shadow-indigo-500/20"
+          >
+            <Icon d={Icons.plus} size={14} /> Add Subject
+          </button>
+        </div>
       </div>
 
-      {/* STAT CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Overall Attendance" value={`${overallPct}%`} sub="Across all subjects" icon="attendance" color={overallPct >= 75 ? "#4ade80" : "#fbbf24"} />
-        <StatCard label="Classes Attended" value={totalPresent} sub={`out of ${totalClasses} total`} icon="book" color="#818cf8" />
-        <StatCard label="Subjects at Risk" value={subjectsAtRisk} sub="Below target %" icon="bell" color={subjectsAtRisk > 0 ? "#f87171" : "#4ade80"} />
-        <StatCard label="Status" value={statusState} sub={statusSub} icon="zap" color={statusColor} />
-      </div>
+      {/* 🚀 THE NEW SMART ALERTS ENGINE */}
+      {!loading && subjects.length > 0 && (
+        <SmartAlerts subjects={subjects} />
+      )}
+
+      {/* 📊 MODULAR STAT CARDS */}
+      <AttendanceStats stats={stats} />
+
+      {/* 🚀 PREMIUM DASHBOARD WIDGETS (Planner & Trends) */}
+      {!loading && subjects.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-2 mb-2">
+          <div className="lg:col-span-1">
+            <TodaySchedule subjects={subjects} />
+          </div>
+          <div className="lg:col-span-2">
+            <AttendanceTrends subjects={subjects} />
+          </div>
+        </div>
+      )}
 
       {/* SUBJECTS LIST */}
       <div className="bg-white/5 border border-white/10 rounded-2xl p-6 mt-2">
@@ -197,188 +296,30 @@ export default function Attendance() {
           </div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-            {subjects.map((a) => {
-              const pct = a.total > 0 ? Math.round((a.present / a.total) * 100) : 0;
-              const isOk = a.total === 0 || pct >= a.required;
-              const need = (!isOk && a.total > 0) ? Math.ceil((a.required * a.total - a.present * 100) / (100 - a.required)) : 0;
-              const canSkip = (isOk && a.total > 0 && a.present > 0) ? Math.floor((a.present * 100) / a.required - a.total) : 0;
-              
-              return (
-                <div key={a.id} className="bg-[#0d0d14] border border-white/5 rounded-2xl p-5 hover:border-white/10 transition-colors">
-                  
-                  {/* Subject Header & Settings */}
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="min-w-0 pr-4">
-                      <h4 className="text-[15px] text-slate-100 font-bold truncate">{a.subject}</h4>
-                      <div className="text-[11px] text-white/40 mt-1 flex gap-2 items-center flex-wrap">
-                        <span>Target: {a.required}%</span>
-                        <span>•</span>
-                        <span>Attended: {a.present}/{a.total}</span>
-                        {a.days && a.days.length > 0 && (
-                          <>
-                            <span>•</span>
-                            <span className="text-indigo-300 bg-indigo-500/10 px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider">
-                              {a.days.join(", ")}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex gap-3 items-center shrink-0">
-                      <div className="text-right">
-                        <span className={`text-[22px] font-extrabold tracking-tight leading-none ${isOk ? 'text-green-400' : 'text-red-400'}`}>{pct}%</span>
-                        {!isOk && a.total > 0 && <div className="text-[10px] font-bold text-red-400 mt-1 bg-red-400/10 px-2 py-0.5 rounded-full inline-block">Need {need} more classes</div>}
-                        {isOk && canSkip > 0 && <div className="text-[10px] font-bold text-green-400 mt-1 bg-green-400/10 px-2 py-0.5 rounded-full inline-block">Can skip {canSkip} classes</div>}
-                        {isOk && canSkip === 0 && a.total > 0 && <div className="text-[10px] font-bold text-amber-400 mt-1 bg-amber-400/10 px-2 py-0.5 rounded-full inline-block">On track (0 skips left)</div>}
-                      </div>
-                      <button 
-                        onClick={() => { setErrors({}); setEditSubject(a); setIsEditModalOpen(true); }}
-                        className="w-8 h-8 rounded-lg bg-white/5 text-white/40 hover:text-white hover:bg-white/10 flex items-center justify-center transition-colors ml-2 shrink-0"
-                        title="Edit / Undo"
-                      >
-                        <Icon d={Icons.settings} size={15} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Progress Bar */}
-                  <div className="relative mb-5">
-                    <ProgressBar value={pct} color={isOk ? "#4ade80" : "#f87171"} height={12} />
-                    <div className="absolute top-[-4px] bottom-[-4px] w-[3px] bg-white rounded-full shadow-[0_0_8px_rgba(255,255,255,0.8)] z-10" style={{ left: `${a.required}%` }} title={`Target: ${a.required}%`} />
-                  </div>
-
-                  {/* Quick Action Buttons */}
-                  <div className="flex gap-2">
-                    <button onClick={() => markAttendance(a.id, 'present')} className="flex-1 py-2.5 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 hover:bg-green-500/20 text-[12px] font-bold flex items-center justify-center gap-2 transition-colors">
-                      <Icon d={Icons.check} size={14} /> Mark Present
-                    </button>
-                    <button onClick={() => markAttendance(a.id, 'absent')} className="flex-1 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 text-[12px] font-bold flex items-center justify-center gap-2 transition-colors">
-                      <Icon d={Icons.x} size={14} /> Mark Absent
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+            {subjects.map((a) => (
+              <SubjectCard 
+                key={a.id} subject={a} markAttendance={markAttendance} updatingIds={updatingIds} 
+                onEdit={(subjectToEdit) => { setErrors({}); setEditSubject(subjectToEdit); setIsEditModalOpen(true); }} 
+              />
+            ))}
           </div>
         )}
       </div>
 
-      {/* ─── ADD SUBJECT MODAL ─── */}
-      <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Add New Subject">
-        <form onSubmit={handleAddSubject} className="flex flex-col gap-5">
-          <div>
-            <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-1.5">Subject Name *</label>
-            <input 
-              type="text" placeholder="e.g., Data Structures"
-              value={newSubject.subject} onChange={e => { setNewSubject({...newSubject, subject: e.target.value}); setErrors({...errors, subject: null}); }}
-              className={`w-full bg-[#0d0d14] border rounded-xl px-4 py-3 text-slate-200 text-[13px] outline-none transition-colors ${errors.subject ? 'border-red-500/50 focus:border-red-500/50' : 'border-white/10 focus:border-indigo-500/50'}`}
-            />
-            {errors.subject && <span className="text-[11px] text-red-400 mt-1 block">{errors.subject}</span>}
-          </div>
+      {/* 🗔 MODULAR ADD & EDIT MODALS */}
+      <AddSubjectModal 
+        isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)}
+        newSubject={newSubject} setNewSubject={setNewSubject}
+        handleAddSubject={handleAddSubject} isSubmitting={isSubmitting}
+        errors={errors} setErrors={setErrors} toggleDay={toggleDay}
+      />
 
-          {/* Timetable / Days Picker */}
-          <div>
-            <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-2">Class Days (Optional)</label>
-            <div className="flex gap-1.5 w-full">
-              {WEEKDAYS.map(day => (
-                <button
-                  key={day} type="button" onClick={() => toggleDay(day, newSubject, setNewSubject)}
-                  className={`flex-1 py-2 rounded-lg text-[11px] font-bold transition-all duration-200 ${
-                    newSubject.days?.includes(day) 
-                      ? 'bg-indigo-500/20 border border-indigo-500/50 text-indigo-300 shadow-md' 
-                      : 'bg-[#0d0d14] border border-white/10 text-white/30 hover:bg-white/5 hover:text-white/60'
-                  }`}
-                >
-                  {day.charAt(0)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-1.5">Classes Attended</label>
-              <input type="number" min="0" placeholder="0" value={newSubject.present} onChange={e => setNewSubject({...newSubject, present: e.target.value})} className="w-full bg-[#0d0d14] border border-white/10 rounded-xl px-4 py-3 text-slate-200 text-[13px] outline-none focus:border-indigo-500/50" />
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-1.5">Total Classes Held</label>
-              <input type="number" min="0" placeholder="0" value={newSubject.total} onChange={e => setNewSubject({...newSubject, total: e.target.value})} className="w-full bg-[#0d0d14] border border-white/10 rounded-xl px-4 py-3 text-slate-200 text-[13px] outline-none focus:border-indigo-500/50" />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-1.5">Target Percentage (%) *</label>
-            <input type="number" min="1" max="100" placeholder="75" value={newSubject.required} onChange={e => { setNewSubject({...newSubject, required: e.target.value}); setErrors({...errors, required: null}); }} className={`w-full bg-[#0d0d14] border rounded-xl px-4 py-3 text-slate-200 text-[13px] outline-none transition-colors ${errors.required ? 'border-red-500/50 focus:border-red-500/50' : 'border-white/10 focus:border-indigo-500/50'}`} />
-            {errors.required && <span className="text-[11px] text-red-400 mt-1 block">{errors.required}</span>}
-          </div>
-
-          <button type="submit" disabled={isSubmitting} className="w-full mt-2 bg-gradient-to-br from-indigo-500 to-purple-500 text-white font-bold text-[13px] py-3.5 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 shadow-lg shadow-indigo-500/20">
-            {isSubmitting ? "Saving..." : "Add Subject"}
-          </button>
-        </form>
-      </Modal>
-
-      {/* ─── EDIT / UNDO SUBJECT MODAL ─── */}
-      {editSubject && (
-        <Modal isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)} title="Edit Subject & Fix Mistakes">
-          <form onSubmit={handleUpdateSubject} className="flex flex-col gap-5">
-            <div>
-              <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-1.5">Subject Name</label>
-              <input type="text" value={editSubject.subject} onChange={e => { setEditSubject({...editSubject, subject: e.target.value}); setErrors({...errors, subject: null}); }} className={`w-full bg-[#0d0d14] border rounded-xl px-4 py-3 text-slate-200 text-[13px] outline-none transition-colors ${errors.subject ? 'border-red-500/50 focus:border-red-500/50' : 'border-white/10 focus:border-amber-500/50'}`} />
-              {errors.subject && <span className="text-[11px] text-red-400 mt-1 block">{errors.subject}</span>}
-            </div>
-
-            {/* Timetable / Days Picker for Edit Modal */}
-            <div>
-              <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-2">Class Days</label>
-              <div className="flex gap-1.5 w-full">
-                {WEEKDAYS.map(day => (
-                  <button
-                    key={day} type="button" onClick={() => toggleDay(day, editSubject, setEditSubject)}
-                    className={`flex-1 py-2 rounded-lg text-[11px] font-bold transition-all duration-200 ${
-                      editSubject.days?.includes(day) 
-                        ? 'bg-amber-500/20 border border-amber-500/50 text-amber-400 shadow-md' 
-                        : 'bg-[#0d0d14] border border-white/10 text-white/30 hover:bg-white/5 hover:text-white/60'
-                    }`}
-                  >
-                    {day.charAt(0)}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-6">
-              <div>
-                <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-2">Classes Attended</label>
-                <div className="flex items-center gap-3">
-                  <button type="button" onClick={() => setEditSubject({...editSubject, present: Math.max(0, editSubject.present - 1)})} className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 text-lg transition-colors">-</button>
-                  <input type="number" min="0" value={editSubject.present} onChange={e => setEditSubject({...editSubject, present: e.target.value})} className="flex-1 bg-[#0d0d14] border border-white/10 rounded-xl px-3 py-3 text-center text-slate-200 text-[15px] font-bold outline-none focus:border-amber-500/50" />
-                  <button type="button" onClick={() => setEditSubject({...editSubject, present: editSubject.present + 1})} className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 text-lg transition-colors">+</button>
-                </div>
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-2">Total Classes</label>
-                <div className="flex items-center gap-3">
-                  <button type="button" onClick={() => setEditSubject({...editSubject, total: Math.max(0, editSubject.total - 1)})} className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 text-lg transition-colors">-</button>
-                  <input type="number" min="0" value={editSubject.total} onChange={e => setEditSubject({...editSubject, total: e.target.value})} className="flex-1 bg-[#0d0d14] border border-white/10 rounded-xl px-3 py-3 text-center text-slate-200 text-[15px] font-bold outline-none focus:border-amber-500/50" />
-                  <button type="button" onClick={() => setEditSubject({...editSubject, total: editSubject.total + 1})} className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 text-lg transition-colors">+</button>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-1.5">Target Percentage (%)</label>
-              <input type="number" min="1" max="100" value={editSubject.required} onChange={e => { setEditSubject({...editSubject, required: e.target.value}); setErrors({...errors, required: null}); }} className={`w-full bg-[#0d0d14] border rounded-xl px-4 py-3 text-slate-200 text-[13px] outline-none transition-colors ${errors.required ? 'border-red-500/50 focus:border-red-500/50' : 'border-white/10 focus:border-amber-500/50'}`} />
-              {errors.required && <span className="text-[11px] text-red-400 mt-1 block">{errors.required}</span>}
-            </div>
-
-            <div className="flex gap-3 mt-4">
-              <button type="button" onClick={() => handleDeleteSubject(editSubject.id)} className="px-5 py-3.5 rounded-xl bg-red-500/10 text-red-400 text-[13px] font-bold hover:bg-red-500/20 transition-colors">Delete</button>
-              <button type="submit" disabled={isSubmitting} className="flex-1 bg-gradient-to-br from-amber-500 to-orange-500 text-white font-bold text-[13px] py-3.5 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 shadow-lg shadow-amber-500/20">{isSubmitting ? "Saving..." : "Save Changes"}</button>
-            </div>
-          </form>
-        </Modal>
-      )}
+      <EditSubjectModal 
+        isOpen={isEditModalOpen} onClose={() => setIsEditModalOpen(false)}
+        editSubject={editSubject} setEditSubject={setEditSubject}
+        handleUpdateSubject={handleUpdateSubject} handleDeleteSubject={handleDeleteSubject}
+        isSubmitting={isSubmitting} errors={errors} setErrors={setErrors} toggleDay={toggleDay}
+      />
 
       {/* ─── TOAST NOTIFICATION ─── */}
       {toast && (

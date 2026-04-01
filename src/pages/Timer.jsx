@@ -4,6 +4,12 @@ import Modal from "../components/ui/Modal";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import { processActivityXP } from "../lib/streakEngine";
+import AIFocusCoach from "../components/timer/AIFocusCoach";
+import FocusStats from "../components/timer/FocusStats";
+import CompletionModal from "../components/timer/CompletionModal";
+import ZenModeOverlay from "../components/timer/ZenModeOverlay";
+import AmbientSounds from "../components/timer/AmbientSounds";
+import SessionAnalytics from "../components/timer/SessionAnalytics";
 
 export default function Timer() {
   const { user } = useAuth();
@@ -28,6 +34,13 @@ export default function Timer() {
   const [sessionsToday, setSessionsToday] = useState(0);
   const [focusMinutes, setFocusMinutes] = useState(0);
 
+  const [studyHistory, setStudyHistory] = useState([]);
+
+  // ─── 🚀 SMART MODE & AI STATE ───
+  const [pomoCount, setPomoCount] = useState(0);
+  const breakTips = ["Drink a glass of water 💧", "Do a quick 2-minute stretch 🧘‍♂️", "Rest your eyes - look 20 feet away 👀", "Take a short walk around the room 🚶‍♂️", "Do 5 deep breaths 🌬️"];
+  const [currentTip, setCurrentTip] = useState(breakTips[0]);
+
   // ─── ZEN MODE & SPOTIFY STATE (With LocalStorage Memory) ───
   const [isZenMode, setIsZenMode] = useState(false);
   
@@ -39,21 +52,6 @@ export default function Timer() {
   useEffect(() => {
     localStorage.setItem('gradpilot_spotify', spotifyUrl);
   }, [spotifyUrl]); 
-
-  // Helper to securely convert standard Spotify share links into Embed UI links
-  const getSpotifyEmbedUrl = (link) => {
-    const defaultEmbed = "https://open.spotify.com/embed/playlist/0vvXsWCC9xrXsKd4FyS8kM?theme=0";
-    if (!link) return defaultEmbed;
-    if (link.includes('/embed/')) return link; 
-    
-    try {
-      const url = new URL(link);
-      // Extracts just the "/playlist/ID" or "/track/ID" part and injects /embed
-      return `https://open.spotify.com/embed${url.pathname}?theme=0`;
-    } catch (e) {
-      return defaultEmbed; 
-    }
-  };
 
   const toggleZenMode = async () => {
     try {
@@ -91,19 +89,46 @@ export default function Timer() {
     }
   }, [seconds, running]);
 
+  // ─── 🛡️ SAFE DATA FETCHING & OFFLINE SYNC ───
   useEffect(() => {
-    const fetchData = async () => {
-      const { data: tasksData } = await supabase.from('tasks').select('*').eq('user_id', user.id).eq('status', 'pending').order('due', { ascending: true });
-      if (tasksData) setPendingTasks(tasksData);
+    if (!user?.id) return;
 
-      const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-      if (profileData) {
-        setProfile(profileData);
-        setFocusMinutes(profileData.focus_minutes_today || 0);
-        setSessionsToday(profileData.sessions_today || 0); 
+    const fetchData = async () => {
+      try {
+        // 1. Fetch Tasks & Profile
+        const { data: tasksData } = await supabase.from('tasks').select('*').eq('user_id', user.id).eq('status', 'pending');
+        if (tasksData) setPendingTasks(tasksData);
+
+        const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        if (profileData) {
+          setProfile(profileData);
+          setFocusMinutes(profileData.focus_minutes_today || 0);
+          setSessionsToday(profileData.sessions_today || 0); 
+        }
+
+        // 2. Fetch History for Analytics
+        const { data: historyData } = await supabase.from('study_sessions').select('duration_minutes, mood').eq('user_id', user.id);
+        if (historyData) setStudyHistory(historyData);
+
+        // 3. 🛜 OFFLINE SYNC CHECK
+        const offlineSessions = JSON.parse(localStorage.getItem('gradpilot_offline_sessions') || "[]");
+        if (offlineSessions.length > 0 && navigator.onLine) {
+          console.log("Syncing offline sessions to cloud...");
+          await supabase.from('study_sessions').insert(offlineSessions);
+          localStorage.removeItem('gradpilot_offline_sessions');
+          showToastMessage(`Synced ${offlineSessions.length} offline sessions to the cloud! ☁️`);
+        }
+
+      } catch (err) {
+        console.error("Critical fetch failure:", err);
       }
     };
+    
     fetchData();
+    
+    // Listen for internet returning
+    window.addEventListener('online', fetchData);
+    return () => window.removeEventListener('online', fetchData);
   }, [user]);
 
   const showToastMessage = (msg) => {
@@ -111,23 +136,41 @@ export default function Timer() {
     setTimeout(() => setToast(null), 4000);
   };
 
+  // ─── 🛡️ BULLETPROOF INTERVAL & EXIT BLOCKER (Bugs 4, 5 & Improvement 8) ───
   useEffect(() => {
     let interval = null;
-    if (running && targetTime) {
-      interval = setInterval(() => {
-        // By calculating from Date.now(), we bypass browser throttling freezing the time!
-        const remaining = Math.round((targetTime - Date.now()) / 1000);
-        
-        if (remaining <= 0) {
-          setSeconds(0);
-          handleSessionComplete(); // Trigger completion
-        } else {
-          setSeconds(remaining);
-        }
-      }, 1000);
-    }
-    return () => clearInterval(interval);
+    
+    // 🐛 Bug 4 Fix: Guard clause to prevent duplicate/ghost intervals
+    if (!running || !targetTime) return;
+
+    interval = setInterval(() => {
+      const remaining = Math.round((targetTime - Date.now()) / 1000);
+      
+      if (remaining <= 0) {
+        setSeconds(0);
+        handleSessionComplete(); 
+      } else {
+        setSeconds(remaining);
+      }
+    }, 1000);
+
+    // 🐛 Bug 5 Fix: Strict cleanup on unmount or state change
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [running, targetTime]);
+
+  // 🚀 Improvement 8: Prevent Accidental Tab Closing
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      if (running) {
+        e.preventDefault();
+        e.returnValue = "You have an active focus session. Are you sure you want to leave?";
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [running]);
 
   useEffect(() => {
     if (!running) setSeconds(configs[mode] * 60);
@@ -138,9 +181,9 @@ export default function Timer() {
       setRunning(false);
       setTargetTime(null);
     } else {
-      // 🚀 MAGIC 2: Ask permission to send Desktop Notifications the first time they click play
-      if (Notification.permission === "default") {
-        Notification.requestPermission();
+      // 🐛 Bug 2 Fix: Safely check if Notifications exist in the browser
+      if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission().catch(e => console.warn("Notifications blocked."));
       }
       setTargetTime(Date.now() + (seconds * 1000));
       setRunning(true);
@@ -170,18 +213,24 @@ export default function Timer() {
     setRunning(false);
     setTargetTime(null);
 
-    // 1. Try to play audio (Might be blocked if tab is hidden)
+    // 🐛 Bug 3 Fix: Graceful audio fallback
     try {
       const chime = new Audio('/chime.mp3'); 
-      chime.play().catch(e => console.log("Audio blocked by browser"));
-    } catch (e) { }
+      await chime.play();
+    } catch (e) { 
+      console.warn("Browser blocked auto-play audio."); 
+    }
 
-    // 🚀 MAGIC 3: Fire a Native Desktop Notification! (This works even if minimized!)
-    if (Notification.permission === "granted") {
-      new Notification(mode === "pomodoro" || mode === "deepWork" ? "Focus Session Complete!" : "Break is over!", {
-        body: mode === "pomodoro" || mode === "deepWork" ? "Great job! Click here to log your session." : "Time to get back to work!",
-        icon: "/pwa-192x192.png"
-      });
+    // 🐛 Bug 2 Fix: Safe Notification Trigger
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        new Notification(mode === "pomodoro" || mode === "deepWork" ? "Focus Session Complete!" : "Break is over!", {
+          body: mode === "pomodoro" || mode === "deepWork" ? "Great job! Click here to log your session." : "Time to get back to work!",
+          icon: "/pwa-192x192.png"
+        });
+      } catch (e) {
+        console.warn("Notification failed to fire.");
+      }
     }
     
     if (mode === "pomodoro" || mode === "deepWork") {
@@ -202,10 +251,12 @@ export default function Timer() {
       const activeTask = pendingTasks.find(t => t.id === selectedTaskId);
       const subjectToLog = activeTask ? activeTask.subject : "General";
 
-      // 1. Save Session
-      await supabase.from('study_sessions').insert([{
+      // 1. Save Session (🐛 Bug 6 Fix: Strict Error Catching)
+      const { error: sessionError } = await supabase.from('study_sessions').insert([{
         user_id: user.id, task_id: selectedTaskId || null, subject: subjectToLog, duration_minutes: configs[mode], mood: sessionMood
       }]);
+      
+      if (sessionError) throw sessionError; // This will trigger the catch block below!
 
       // 2. Process Standard XP
       const res = await processActivityXP(user.id, 20, configs[mode]);
@@ -251,11 +302,41 @@ export default function Timer() {
 
       showToastMessage(finalToastMessage);
       setShowCompletionModal(false);
-      switchMode("shortBreak"); 
+      
+      // 🚀 SMART MODE ROUTING & BREAK TIPS
+      setCurrentTip(breakTips[Math.floor(Math.random() * breakTips.length)]);
+      
+      if (mode === "pomodoro") {
+        const newCount = pomoCount + 1;
+        setPomoCount(newCount);
+        if (newCount % 4 === 0) {
+          switchMode("longBreak");
+          showToastMessage("4 Sessions complete! You earned a Long Break. 🏆");
+        } else {
+          switchMode("shortBreak");
+        }
+      } else if (mode === "deepWork") {
+        switchMode("longBreak"); // Deep work always gets a long recovery
+      } 
       
     } catch (error) {
-      console.error("Failed to save session:", error);
-      showToastMessage("Network error: Failed to save session. Try again.");
+      console.error("Failed to save session to cloud:", error);
+      
+      // 🛜 THE OFFLINE FALLBACK ENGINE
+      if (!navigator.onLine || error.message === "Failed to fetch") {
+        const offlineSession = {
+          user_id: user.id, task_id: selectedTaskId || null, subject: subjectToLog, 
+          duration_minutes: configs[mode], mood: sessionMood, created_at: new Date().toISOString()
+        };
+        const existingOffline = JSON.parse(localStorage.getItem('gradpilot_offline_sessions') || "[]");
+        localStorage.setItem('gradpilot_offline_sessions', JSON.stringify([...existingOffline, offlineSession]));
+        
+        showToastMessage("You are offline. Session saved locally! 💾");
+        setShowCompletionModal(false);
+        switchMode("shortBreak");
+      } else {
+        showToastMessage("Network error: Failed to save session.");
+      }
     }
   };
 
@@ -276,87 +357,17 @@ export default function Timer() {
 
   return (
     <div className="flex flex-col gap-6 items-center pb-10 relative">
-      {/* ─── ZEN MODE FULLSCREEN OVERLAY ─── */}
-      {isZenMode && (
-        <div className="fixed inset-0 z-[100] bg-[#050508] flex flex-col items-center justify-center animate-[fadeIn_0.5s_ease-out]">
-          
-          {/* Ambient Glow */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-indigo-500/10 blur-[120px] rounded-full pointer-events-none" />
-
-          <div className="relative z-10 flex flex-col items-center">
-            <div className="text-[12px] font-bold text-indigo-400 tracking-[0.3em] uppercase mb-8">
-              Deep Focus Mode
-            </div>
-
-            {/* MASSIVE TIMER */}
-            <div className="text-[150px] md:text-[200px] font-extrabold text-white leading-none tracking-tight mb-16 drop-shadow-2xl font-['Plus_Jakarta_Sans']">
-              {mins}:{secs}
-            </div>
-
-            {/* CONTROLS (🐛 BUG FIX: Added mb-16 here for perfect spacing!) */}
-            <div className="flex items-center gap-8 mb-16">
-              <button
-                onClick={toggleTimer} 
-                className="w-20 h-20 rounded-full bg-white text-black flex items-center justify-center text-4xl hover:scale-105 transition-transform shadow-[0_0_40px_rgba(255,255,255,0.3)]"
-              >
-                <Icon d={running ? Icons.pause : Icons.play} size={32} className={running ? "" : "ml-1"} />
-              </button>
-
-              <button
-                onClick={toggleZenMode}
-                className="px-6 py-4 rounded-full bg-white/5 text-white/50 font-bold text-[14px] hover:bg-white/10 hover:text-white transition-all border border-white/10"
-              >
-                Exit Zen Mode (Esc)
-              </button>
-            </div>
-
-            {/* 🎧 THE SPOTIFY LOFI PLAYER (With SaaS Empty State) */}
-            <div className="w-full max-w-[400px] flex flex-col items-center animate-[fadeIn_1s_ease-out_0.5s_both]">
-              
-              {spotifyUrl ? (
-                /* The Active Player */
-                <div className="w-full h-[152px]">
-                  <iframe 
-                    style={{ borderRadius: '16px' }} 
-                    src={getSpotifyEmbedUrl(spotifyUrl)} 
-                    width="100%" 
-                    height="100%" 
-                    frameBorder="0" 
-                    allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" 
-                    loading="lazy"
-                    className="shadow-2xl border border-white/10 bg-[#282828]"
-                  ></iframe>
-                </div>
-              ) : (
-                /* The Premium Empty State */
-                <div className="w-full h-[152px] rounded-[16px] border border-dashed border-white/20 bg-white/[0.02] flex flex-col items-center justify-center text-center p-6 shadow-2xl">
-                  <span className="text-3xl mb-2 opacity-50">🎧</span>
-                  <div className="text-[13px] font-bold text-white/70">Connect Your Flow State</div>
-                  <div className="text-[11px] text-white/40 mt-1">Paste a Spotify playlist link below to enable the built-in player.</div>
-                </div>
-              )}
-              
-              {/* Custom Playlist Input */}
-              <div className={`mt-6 w-full flex items-center gap-3 transition-opacity duration-300 ${spotifyUrl ? 'opacity-30 hover:opacity-100 focus-within:opacity-100' : 'opacity-100'}`}>
-                <span className="text-[14px]">{spotifyUrl ? '🔗' : '✨'}</span>
-                <input 
-                  type="text" 
-                  value={spotifyUrl}
-                  onChange={(e) => setSpotifyUrl(e.target.value)}
-                  placeholder="Paste Spotify playlist link here..."
-                  className="w-full bg-transparent border-b border-white/20 text-white text-[12px] pb-1.5 outline-none focus:border-indigo-400 placeholder:text-white/30 transition-colors"
-                />
-                {/* A clear button so they can easily swap playlists */}
-                {spotifyUrl && (
-                  <button onClick={() => setSpotifyUrl("")} className="text-[10px] text-white/40 hover:text-red-400 font-bold tracking-wider uppercase">Clear</button>
-                )}
-              </div>
-
-            </div>
-
-          </div>
-        </div>
-      )}
+      {/* 🧘‍♂️ MODULAR ZEN MODE */}
+      <ZenModeOverlay 
+        isZenMode={isZenMode}
+        toggleZenMode={toggleZenMode}
+        mins={mins}
+        secs={secs}
+        running={running}
+        toggleTimer={toggleTimer}
+        spotifyUrl={spotifyUrl}
+        setSpotifyUrl={setSpotifyUrl}
+      />
 
       <div className="text-center">
         <h2 className="text-slate-100 font-bold text-[22px] font-['Plus_Jakarta_Sans']">Focus Timer</h2>
@@ -370,6 +381,13 @@ export default function Timer() {
           </button>
         ))}
       </div>
+
+      {/* 🚀 HEALTHY BREAK SUGGESTION */}
+      {(mode === "shortBreak" || mode === "longBreak") && !running && (
+        <div className="mt-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[12px] font-bold animate-[fadeIn_0.5s_ease-out]">
+          💡 Tip: {currentTip}
+        </div>
+      )}
 
       <div className="relative w-[280px] h-[280px] mt-4">
         <svg width={280} height={280} className="-rotate-90 drop-shadow-[0_0_15px_rgba(99,102,241,0.2)]">
@@ -415,70 +433,36 @@ export default function Timer() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-[650px] mt-6">
-        {[
-          ["Sessions Today", sessionsToday, "🍅"], 
-          ["Focus Time", `${Math.floor(focusMinutes / 60)}h ${focusMinutes % 60}m`, "⏱"], 
-          ["Streak", `${profile?.current_streak || 0} days`, "🔥"], 
-          ["Daily Goal", `${Math.min(100, Math.round((focusMinutes / (profile?.daily_focus_goal || 120)) * 100))}%`, "🎯"]
-        ].map(([l, v, e]) => (
-          <div key={l} className="bg-white/5 border border-white/10 rounded-2xl p-4 text-center hover:bg-white/[0.07] transition-colors">
-            <div className="text-2xl mb-2 drop-shadow-md">{e}</div>
-            <div className="text-[17px] font-bold text-slate-100 font-['Plus_Jakarta_Sans'] leading-none mb-1">{v}</div>
-            <div className="text-[11px] text-white/40 uppercase tracking-wide">{l}</div>
-          </div>
-        ))}
-      </div>
+      {/* 🎧 MODULAR AMBIENT SOUNDS */}
+      <AmbientSounds />
 
-      <Modal isOpen={showCompletionModal} onClose={() => { setShowCompletionModal(false); switchMode("shortBreak"); }} title="Focus Session Complete!">
-        <div className="flex flex-col items-center text-center gap-5 py-2">
-          
-          <div className="w-full bg-white/5 border border-white/10 p-5 rounded-2xl">
-            <h3 className="text-[14px] font-bold text-slate-100 mb-3">How did this session feel?</h3>
-            <div className="flex gap-3 justify-center">
-              {[
-                { id: 'great', emoji: '🟢', label: 'Felt Great' },
-                { id: 'okay', emoji: '🟡', label: 'Okay' },
-                { id: 'struggled', emoji: '🔴', label: 'Struggled' }
-              ].map(mood => (
-                <button 
-                  key={mood.id}
-                  onClick={() => setSessionMood(mood.id)}
-                  className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all flex-1
-                    ${sessionMood === mood.id ? 'bg-indigo-500/20 border-indigo-500/50 shadow-md scale-105' : 'bg-[#0d0d14] border-white/5 opacity-60 hover:opacity-100'}`}
-                >
-                  <span className="text-2xl">{mood.emoji}</span>
-                  <span className={`text-[11px] font-bold ${sessionMood === mood.id ? 'text-indigo-300' : 'text-white/50'}`}>{mood.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* 📊 MODULAR STATS GRID */}
+      <FocusStats 
+        sessionsToday={sessionsToday}
+        focusMinutes={focusMinutes}
+        currentStreak={profile?.current_streak || 0}
+        dailyFocusGoal={profile?.daily_focus_goal || 120}
+      />
 
-          {activeTask ? (
-            <div className="w-full mt-2">
-              <p className="text-[13px] text-white/60 mb-4">
-                You were focusing on <strong className="text-indigo-400">"{activeTask.title}"</strong>. Cross it off your list?
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full">
-                <button onClick={() => submitSession(false)} className="py-3 px-4 rounded-xl border border-white/10 text-white/60 hover:text-white hover:bg-white/5 font-semibold text-[13px] transition-colors">
-                  Need more time
-                </button>
-                <button onClick={() => submitSession(true)} className="py-3 px-4 rounded-xl bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 font-bold text-[13px] flex items-center justify-center gap-2 transition-colors">
-                  <Icon d={Icons.check} size={16} /> Mark Completed
-                </button>
-              </div>
-            </div>
-          ) : (
-            <button 
-              onClick={() => submitSession(false)} 
-              className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 text-white font-bold text-[14px] hover:opacity-90 transition-opacity"
-            >
-              Save & Take a Break (+20 XP)
-            </button>
-          )}
+      {/* 📈 LIFETIME ANALYTICS */}
+      <SessionAnalytics studyHistory={studyHistory} />
 
-        </div>
-      </Modal>
+      {/* 🚀 THE AI FOCUS COACH */}
+      <AIFocusCoach 
+        focusMinutes={focusMinutes} 
+        sessionsToday={sessionsToday} 
+        currentStreak={profile?.current_streak || 0} 
+      />
+
+      {/* 🗔 MODULAR COMPLETION MODAL */}
+      <CompletionModal 
+        isOpen={showCompletionModal}
+        onClose={() => { setShowCompletionModal(false); switchMode("shortBreak"); }}
+        sessionMood={sessionMood}
+        setSessionMood={setSessionMood}
+        activeTask={activeTask}
+        submitSession={submitSession}
+      />
 
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 bg-green-500/10 border border-green-500/30 text-green-400 px-5 py-3 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3 animate-[fadeIn_0.3s_ease-out]">

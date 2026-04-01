@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Badge from "../components/ui/Badge";
 import ProgressBar from "../components/ui/ProgressBar";
 import { Icon, Icons } from "../components/ui/Icon";
@@ -6,6 +6,8 @@ import Modal from "../components/ui/Modal";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import { processActivityXP } from "../lib/streakEngine"; 
+import TaskModal from "../components/assignments/TaskModal";
+import FlashcardModal from "../components/assignments/FlashcardModal";
 
 export default function Assignments() {
   const { user } = useAuth();
@@ -16,6 +18,7 @@ export default function Assignments() {
   const [subjectOptions, setSubjectOptions] = useState(["General"]);
   const [toast, setToast] = useState(null);
   const [showSubjectDropdown, setShowSubjectDropdown] = useState(false);
+  const [selectedTasks, setSelectedTasks] = useState([]);
 
   // ─── TASK MODAL STATES ───
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -24,13 +27,12 @@ export default function Assignments() {
   const [errors, setErrors] = useState({});
   const [newTask, setNewTask] = useState({ title: "", subject: "", date: "", time: "", priority: "medium" });
 
-  // ─── AI FLASHCARD STATES ───
+  // ─── AI STUDY ENGINE STATES ───
   const [isFlashcardModalOpen, setIsFlashcardModalOpen] = useState(false);
   const [activeStudyTask, setActiveStudyTask] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [flashcards, setFlashcards] = useState([]);
-  const [currentCardIndex, setCurrentCardIndex] = useState(0);
-  const [isFlipped, setIsFlipped] = useState(false);
+  const [studyMode, setStudyMode] = useState(null); // 'summary', 'flashcards', 'quiz'
+  const [studyData, setStudyData] = useState(null); // Holds the dynamic AI response
 
   useEffect(() => {
       document.title = "Assignments | GradPilot";
@@ -57,20 +59,62 @@ export default function Assignments() {
   }, [user]);
 
   const fetchData = async () => {
-    setLoading(true);
-    const [ { data: tasksData }, { data: attData } ] = await Promise.all([
-      // 🔒 FIX: Scoped query to stop homework data leaks
-      supabase.from('tasks').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('attendance').select('subject').eq('user_id', user.id)
-    ]);
+    if (!user?.id) return;
     
-    if (tasksData) setAssignments(tasksData);
-    if (attData) {
-      const uniqueSubjects = [...new Set(attData.map(a => a.subject))];
-      if (!uniqueSubjects.includes("General")) uniqueSubjects.push("General");
-      setSubjectOptions(uniqueSubjects);
+    // 🚀 STEP 1: INSTANT LOAD (The Offline Cache)
+    // Check if we have their tasks saved in local memory from their last visit
+    const cacheKey = `gradpilot_tasks_${user.id}`;
+    const cachedTasks = localStorage.getItem(cacheKey);
+    
+    if (cachedTasks) {
+      setAssignments(JSON.parse(cachedTasks));
+      setLoading(false); // Instantly drop the loading screen!
+    } else {
+      setLoading(true); // Only show loading spinner on their very first login
     }
-    setLoading(false);
+
+    // 📡 STEP 2: BACKGROUND SYNC (The Revalidation)
+    try {
+      const [ tasksRes, attRes ] = await Promise.all([
+        supabase.from('tasks').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+        supabase.from('attendance').select('subject').eq('user_id', user.id)
+      ]);
+      
+      if (tasksRes.error) throw tasksRes.error;
+      
+      // Run our Auto-Overdue Logic on the fresh data
+      if (tasksRes.data) {
+        const now = new Date();
+        const processedTasks = tasksRes.data.map(task => {
+          if (task.status !== 'completed' && task.due && new Date(task.due) < now && task.status !== 'overdue') {
+            supabase.from('tasks').update({ status: 'overdue' }).eq('id', task.id).then();
+            return { ...task, status: 'overdue' };
+          }
+          return task;
+        });
+        
+        // Update the UI with the fresh, accurate data
+        setAssignments(processedTasks);
+        
+        // 💾 STEP 3: UPDATE THE CACHE
+        // Save this fresh data back to local storage for their next visit
+        localStorage.setItem(cacheKey, JSON.stringify(processedTasks));
+      }
+      
+      if (attRes.data && !attRes.error) {
+        const uniqueSubjects = [...new Set(attRes.data.map(a => a.subject))];
+        if (!uniqueSubjects.includes("General")) uniqueSubjects.push("General");
+        setSubjectOptions(uniqueSubjects);
+      }
+    } catch (error) {
+      console.error("Database sync failed:", error);
+      // If the database fails but they have cached data, they can still use the app!
+      if (!cachedTasks) {
+        showToast("Failed to load assignments. Please check your internet connection.", "error");
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const showToast = (message, type = "success") => {
@@ -113,9 +157,19 @@ export default function Assignments() {
 
   const handleDeleteTask = async (id) => {
     if (!window.confirm("Are you sure you want to delete this assignment?")) return;
+    
+    // 🐛 Bug 3 Fix: Store old state for rollback
+    const previousAssignments = [...assignments];
     setAssignments(prev => prev.filter(a => a.id !== id));
-    await supabase.from('tasks').delete().eq('id', id);
-    showToast("Task deleted forever.", "error");
+    
+    const { error } = await supabase.from('tasks').delete().eq('id', id);
+    
+    if (error) {
+      setAssignments(previousAssignments); // Rollback the UI!
+      showToast("Failed to delete task. Try again.", "error");
+    } else {
+      showToast("Task deleted forever.", "success");
+    }
   };
 
   const handleSaveTask = async (e) => {
@@ -181,10 +235,13 @@ export default function Assignments() {
   const handleDrop = (e, newStatus) => {
     e.preventDefault();
     const taskId = e.dataTransfer.getData("taskId");
-    const task = assignments.find(a => a.id === taskId);
+    
+    // 🐛 Bug 4 Fix: Safe type conversion/comparison for IDs
+    const task = assignments.find(a => String(a.id) === String(taskId));
     if (!task) return;
+    
     const progressMap = { "pending": 0, "in-progress": 50, "completed": 100, "overdue": 0 };
-    updateTaskStatusInDB(taskId, newStatus, progressMap[newStatus], task.status);
+    updateTaskStatusInDB(task.id, newStatus, progressMap[newStatus], task.status);
   };
 
   const addToGoogleCalendar = (task) => {
@@ -214,54 +271,132 @@ export default function Assignments() {
     showToast("Opening Google Calendar...");
   };
 
-  // 🤖 FIX: Actual dynamic AI Flashcards via Supabase Edge Function!
-  const startStudySession = async (task) => {
+  // 🚀 THE ED-TECH UPGRADE: Multi-Modal AI Engine
+  const handleOpenStudyModal = (task) => {
     setActiveStudyTask(task);
+    setStudyMode(null);
+    setStudyData(null);
     setIsFlashcardModalOpen(true);
+  };
+
+  const generateStudyMaterial = async (mode) => {
+    setStudyMode(mode);
     setIsGenerating(true);
-    setFlashcards([]);
-    setCurrentCardIndex(0);
-    setIsFlipped(false);
+    setStudyData(null);
 
     try {
-      const prompt = `Generate 5 unique flashcards for studying the academic assignment: "${task.title}" for the subject "${task.subject || 'General'}". Return ONLY a pure JSON array of objects. Structure: [{"front": "Question?", "back": "Answer"}]`;
-      
-      const { data, error } = await supabase.functions.invoke('ai-chat', {
-        body: { prompt }
-      });
+      let prompt = "";
+      if (mode === 'summary') {
+        prompt = `Act as an expert professor. Write a concise, high-yield study summary for the topic: "${activeStudyTask.title}" (${activeStudyTask.subject || 'General'}). Return ONLY a pure JSON object: {"summary": "your formatted markdown summary here"}`;
+      } else if (mode === 'flashcards') {
+        prompt = `Generate 5 unique flashcards for studying the topic: "${activeStudyTask.title}" (${activeStudyTask.subject || 'General'}). Return ONLY a pure JSON array: [{"front": "Question?", "back": "Answer"}]`;
+      } else if (mode === 'quiz') {
+        prompt = `Generate a 3-question multiple-choice quiz for the topic: "${activeStudyTask.title}" (${activeStudyTask.subject || 'General'}). Return ONLY a pure JSON array: [{"question": "...", "options": ["A", "B", "C", "D"], "correctAnswer": "Exact string of correct option", "explanation": "..."}]`;
+      }
 
+      const { data, error } = await supabase.functions.invoke('ai-chat', { body: { prompt } });
       if (error) throw error;
       
-      let aiResponse = data.reply;
+      // Bulletproof JSON parsing
+      const jsonMatch = data.reply.match(/(\{|\[)[\s\S]*(\}|\])/);
+      if (!jsonMatch) throw new Error("AI did not return valid JSON.");
       
-      // NEW: Bulletproof Regex to find the JSON array even if the AI adds conversational text
-      const jsonMatch = aiResponse.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) throw new Error("AI did not return a valid JSON array.");
-      
-      setFlashcards(JSON.parse(jsonMatch[0]));
+      setStudyData(JSON.parse(jsonMatch[0]));
 
     } catch (err) {
       console.error("AI Generation Failed:", err);
-      showToast("AI core failed to generate flashcards. Please try again.", "error");
-      setIsFlashcardModalOpen(false);
+      showToast("AI core failed to generate material. Please try again.", "error");
+      setStudyMode(null);
     } finally {
       setIsGenerating(false);
     }
   };
-
-  const nextCard = () => { setIsFlipped(false); setTimeout(() => setCurrentCardIndex(p => p + 1), 150); };
-  const prevCard = () => { setIsFlipped(false); setTimeout(() => setCurrentCardIndex(p => p - 1), 150); };
   
   const completeStudySession = async () => {
     setIsFlashcardModalOpen(false);
-    const res = await processActivityXP(user.id, 30, 0); 
-    showToast(`Study Session Complete! +30 XP ${res?.streakExtendedToday ? "🔥 Streak Extended!" : "🚀"}`);
+    const res = await processActivityXP(user.id, 40, 0); 
+    showToast(`Study Session Complete! +40 XP ${res?.streakExtendedToday ? "🔥 Streak Extended!" : "🚀"}`);
   };
 
+  // ─── BULK ACTION LOGIC ───
+  const toggleTaskSelection = (id) => {
+    setSelectedTasks(prev => prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedTasks.length === filtered.length) {
+      setSelectedTasks([]); // Deselect all
+    } else {
+      setSelectedTasks(filtered.map(t => t.id)); // Select all currently filtered tasks
+    }
+  };
+
+  const handleBulkComplete = async () => {
+    if (!window.confirm(`Mark ${selectedTasks.length} tasks as completed?`)) return;
+    
+    const prevAssignments = [...assignments];
+    const now = new Date().toISOString();
+    
+    // 1. Optimistic UI update
+    setAssignments(prev => prev.map(a => 
+      selectedTasks.includes(a.id) ? { ...a, status: 'completed', progress: 100, completed_at: now } : a
+    ));
+    setSelectedTasks([]); // Clear selection
+    
+    // 2. Database update
+    const { error } = await supabase.from('tasks').update({ status: 'completed', progress: 100, completed_at: now }).in('id', selectedTasks);
+    
+    if (error) {
+      setAssignments(prevAssignments);
+      showToast("Bulk complete failed. Try again.", "error");
+    } else {
+      const xpGained = selectedTasks.length * 50;
+      await processActivityXP(user.id, xpGained, 0);
+      showToast(`${selectedTasks.length} tasks completed! +${xpGained} XP 🔥`, "success");
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Are you sure you want to permanently delete ${selectedTasks.length} tasks?`)) return;
+    
+    const prevAssignments = [...assignments];
+    
+    // 1. Optimistic UI update
+    setAssignments(prev => prev.filter(a => !selectedTasks.includes(a.id)));
+    setSelectedTasks([]);
+    
+    // 2. Database update
+    const { error } = await supabase.from('tasks').delete().in('id', selectedTasks);
+    
+    if (error) {
+      setAssignments(prevAssignments);
+      showToast("Bulk delete failed. Try again.", "error");
+    } else {
+      showToast(`${selectedTasks.length} tasks deleted forever.`, "success");
+    }
+  };
+
+  const filtered = useMemo(() => {
+    let result = filter === "all" ? assignments : assignments.filter(a => a.status === filter);
+    const priorityWeight = { high: 3, medium: 2, low: 1 };
+
+    return [...result].sort((a, b) => {
+      if (a.status === 'overdue' && b.status !== 'overdue') return -1;
+      if (b.status === 'overdue' && a.status !== 'overdue') return 1;
+
+      const pA = priorityWeight[a.priority] || 0;
+      const pB = priorityWeight[b.priority] || 0;
+      if (pA !== pB) return pB - pA;
+
+      if (a.due && b.due) return new Date(a.due) - new Date(b.due);
+      if (a.due) return -1; 
+      if (b.due) return 1;
+
+      return 0;
+    });
+  }, [assignments, filter]); 
+
   if (loading) return <div className="flex h-[80vh] items-center justify-center text-white/40"><div className="w-6 h-6 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin mr-3" /> Fetching Assignments...</div>;
-
-  const filtered = filter === "all" ? assignments : assignments.filter(a => a.status === filter);
-
   return (
     <div className="flex flex-col gap-5 relative">
       
@@ -291,6 +426,9 @@ export default function Assignments() {
               {formatText(f)}
             </button>
           ))}
+          <button onClick={toggleSelectAll} className="ml-auto px-3 py-1.5 rounded-lg border border-white/10 text-[11px] font-bold text-white/40 hover:text-white hover:bg-white/5 transition-colors whitespace-nowrap">
+            {selectedTasks.length === filtered.length && filtered.length > 0 ? "Deselect All" : "Select All"}
+          </button>
         </div>
       )}
 
@@ -305,10 +443,20 @@ export default function Assignments() {
             {filtered.map(task => (
               <div key={task.id} className="bg-[#0d0d14] border border-white/5 rounded-2xl p-5 transition-colors hover:border-white/20 group">
                 
-                <div className="flex items-start md:items-center gap-4 flex-col md:flex-row">
-                  <button onClick={() => cycleStatus(task)} className={`w-7 h-7 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${task.status === "completed" ? 'border-green-400 bg-green-400/20 text-green-400 scale-110' : task.status === "in-progress" ? 'border-amber-400 bg-amber-400/20 text-amber-400' : 'border-white/20 hover:border-indigo-400 hover:bg-indigo-400/10 text-transparent'}`}>
-                    {task.status === "completed" ? <Icon d={Icons.check} size={14} /> : task.status === "in-progress" ? <span className="text-[10px] font-bold">~</span> : <Icon d={Icons.check} size={14} className="opacity-0 group-hover:opacity-100 text-indigo-400" />}
-                  </button>
+                <div className="flex items-start md:items-center gap-4 flex-col md:flex-row w-full">
+                  {/* 🚀 NEW: BULK SELECT CHECKBOX */}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedTasks.includes(task.id)}
+                      onChange={() => toggleTaskSelection(task.id)}
+                      className="w-4 h-4 rounded border-white/20 bg-white/5 text-indigo-500 focus:ring-indigo-500/50 focus:ring-offset-[#0d0d14] cursor-pointer transition-all"
+                    />
+                    
+                    <button onClick={() => cycleStatus(task)} className={`w-7 h-7 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${task.status === "completed" ? 'border-green-400 bg-green-400/20 text-green-400 scale-110' : task.status === "in-progress" ? 'border-amber-400 bg-amber-400/20 text-amber-400' : 'border-white/20 hover:border-indigo-400 hover:bg-indigo-400/10 text-transparent'}`}>
+                      {task.status === "completed" ? <Icon d={Icons.check} size={14} /> : task.status === "in-progress" ? <span className="text-[10px] font-bold">~</span> : <Icon d={Icons.check} size={14} className="opacity-0 group-hover:opacity-100 text-indigo-400" />}
+                    </button>
+                  </div>
                   
                   <div className="flex-1 min-w-0 w-full">
                     <div className="flex items-center gap-2 mb-1.5">
@@ -345,7 +493,7 @@ export default function Assignments() {
                       <button onClick={() => addToGoogleCalendar(task)} className="text-[11px] font-bold text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1.5 rounded-lg hover:bg-indigo-500/20 transition-colors flex items-center gap-1.5">📅 GCal</button>
                     )}
                     {task.status !== "completed" && (
-                      <button onClick={() => startStudySession(task)} className="text-[11px] font-bold text-fuchsia-300 bg-fuchsia-500/10 border border-fuchsia-500/20 px-3 py-1.5 rounded-lg hover:bg-fuchsia-500/20 transition-colors flex items-center gap-1.5 shadow-[0_0_10px_rgba(217,70,239,0.1)]">
+                      <button onClick={() => handleOpenStudyModal(task)} className="text-[11px] font-bold text-fuchsia-300 bg-fuchsia-500/10 border border-fuchsia-500/20 px-3 py-1.5 rounded-lg hover:bg-fuchsia-500/20 transition-colors flex items-center gap-1.5 shadow-[0_0_10px_rgba(217,70,239,0.1)]">
                         🪄 Study
                       </button>
                     )}
@@ -402,7 +550,7 @@ export default function Assignments() {
                           <button onClick={() => addToGoogleCalendar(task)} className="flex-1 text-[10px] font-bold text-indigo-300 bg-indigo-500/10 py-1.5 rounded-lg hover:bg-indigo-500/20 transition-colors text-center">📅 GCal</button>
                         )}
                         {task.status !== "completed" && (
-                          <button onClick={() => startStudySession(task)} className="flex-1 text-[10px] font-bold text-fuchsia-300 bg-fuchsia-500/10 py-1.5 rounded-lg hover:bg-fuchsia-500/20 transition-colors text-center shadow-[0_0_10px_rgba(217,70,239,0.1)]">🪄 Study</button>
+                          <button onClick={() => handleOpenStudyModal(task)} className="flex-1 text-[10px] font-bold text-fuchsia-300 bg-fuchsia-500/10 py-1.5 rounded-lg hover:bg-fuchsia-500/20 transition-colors text-center shadow-[0_0_10px_rgba(217,70,239,0.1)]">🪄 Study</button>
                         )}
                       </div>
                     </div>
@@ -415,99 +563,67 @@ export default function Assignments() {
         </div>
       )}
 
-      {/* ─── DYNAMIC TASK MODAL (Create & Edit) ─── */}
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingTaskId ? "Edit Assignment" : "Create New Assignment"}>
-        <form onSubmit={handleSaveTask} className="flex flex-col gap-5">
-          <div>
-            <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-1.5">Task Title *</label>
-            <input type="text" placeholder="e.g., Thermodynamics Essay" value={newTask.title} onChange={e => { setNewTask({...newTask, title: e.target.value}); setErrors({...errors, title: null}); }} className={`w-full bg-[#0d0d14] border rounded-xl px-4 py-3 text-slate-200 text-[13px] font-bold outline-none transition-colors ${errors.title ? 'border-red-500/50 focus:border-red-500' : 'border-white/10 focus:border-indigo-500/50'}`} />
-            {errors.title && <span className="text-[11px] font-bold text-red-400 mt-1 block">{errors.title}</span>}
+      {/* ─── MODULARIZED TASK MODAL ─── */}
+      <TaskModal 
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        editingTaskId={editingTaskId}
+        handleSaveTask={handleSaveTask}
+        isSubmitting={isSubmitting}
+        newTask={newTask}
+        setNewTask={setNewTask}
+        errors={errors}
+        setErrors={setErrors}
+        showSubjectDropdown={showSubjectDropdown}
+        setShowSubjectDropdown={setShowSubjectDropdown}
+        subjectOptions={subjectOptions}
+        priorityConfig={priorityConfig}
+      />
+
+      {/* ─── MODULARIZED AI STUDY MODAL ─── */}
+      <FlashcardModal 
+        isOpen={isFlashcardModalOpen}
+        onClose={() => setIsFlashcardModalOpen(false)}
+        isGenerating={isGenerating}
+        activeStudyTask={activeStudyTask}
+        studyMode={studyMode}
+        studyData={studyData}
+        generateStudyMaterial={generateStudyMaterial}
+        completeStudySession={completeStudySession}
+      />
+
+      {/* ─── 🚀 BULK ACTION FLOATING BAR ─── */}
+      {selectedTasks.length > 0 && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[90] bg-[#1a1a24] border border-indigo-500/30 p-3 rounded-2xl shadow-[0_20px_50px_rgba(99,102,241,0.3)] flex items-center gap-4 animate-[slideUp_0.3s_ease-out] backdrop-blur-xl">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-500 text-white text-[11px] font-bold shadow-lg">
+              {selectedTasks.length}
+            </span>
+            <span className="text-[12px] font-bold text-slate-200 hidden sm:block">Tasks Selected</span>
           </div>
-          <div className="relative">
-            <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-1.5">Subject *</label>
-            <input type="text" placeholder="Select or type subject" value={newTask.subject} onFocus={() => setShowSubjectDropdown(true)} onBlur={() => setTimeout(() => setShowSubjectDropdown(false), 200)} onChange={e => { setNewTask({...newTask, subject: e.target.value}); setErrors({...errors, subject: null}); }} className={`w-full bg-[#0d0d14] border rounded-xl px-4 py-3 text-slate-200 text-[13px] font-bold outline-none transition-colors ${errors.subject ? 'border-red-500/50 focus:border-red-500' : 'border-white/10 focus:border-indigo-500/50'}`} />
-            {showSubjectDropdown && (
-              <div className="absolute z-10 w-full mt-1 bg-[#1a1a24] border border-white/10 rounded-xl shadow-2xl overflow-hidden animate-[fadeIn_0.1s_ease-out]">
-                {subjectOptions.filter(s => s.toLowerCase().includes(newTask.subject.toLowerCase())).map(option => (
-                  <div key={option} onMouseDown={() => { setNewTask({...newTask, subject: option}); setShowSubjectDropdown(false); setErrors({...errors, subject: null}); }} className="px-4 py-2.5 text-[13px] font-bold text-slate-200 hover:bg-indigo-500/20 hover:text-indigo-300 cursor-pointer transition-colors">{option}</div>
-                ))}
-              </div>
-            )}
+          
+          <div className="flex items-center gap-2 pl-2 border-l border-white/10">
+            <button onClick={handleBulkComplete} className="px-4 py-2 bg-gradient-to-r from-green-400 to-emerald-500 text-[#0d0d14] text-[12px] font-bold rounded-xl hover:scale-105 shadow-lg shadow-green-500/20 transition-all flex items-center gap-1.5">
+              ✓ Complete
+            </button>
+            <button onClick={handleBulkDelete} className="px-4 py-2 bg-red-500/10 text-red-400 hover:bg-red-500/20 text-[12px] font-bold rounded-xl transition-colors flex items-center gap-1.5">
+              <Icon d={Icons.delete} size={14} /> Delete
+            </button>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-1.5">Due Date *</label>
-              <input type="date" value={newTask.date} onChange={e => { setNewTask({...newTask, date: e.target.value}); setErrors({...errors, date: null}); }} className={`w-full bg-[#0d0d14] border rounded-xl px-4 py-3 text-slate-200 text-[13px] font-bold outline-none transition-colors [color-scheme:dark] ${errors.date ? 'border-red-500/50 focus:border-red-500' : 'border-white/10 focus:border-indigo-500/50'}`} />
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-1.5">Time (Optional)</label>
-              <input type="time" value={newTask.time} onChange={e => setNewTask({...newTask, time: e.target.value})} className="w-full bg-[#0d0d14] border border-white/10 rounded-xl px-4 py-3 text-slate-200 text-[13px] font-bold outline-none focus:border-indigo-500/50 transition-colors [color-scheme:dark]" />
-            </div>
-          </div>
-          <div>
-            <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-2">Priority Level</label>
-            <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
-              {Object.entries(priorityConfig).map(([key, config]) => (
-                <button key={key} type="button" onClick={() => setNewTask({...newTask, priority: key})} className={`flex-1 py-2 rounded-lg text-xs font-bold capitalize transition-all duration-200 ${newTask.priority === key ? config.colorClass + ' shadow-md' : 'text-white/40 hover:text-white/70'}`}>{config.label}</button>
-              ))}
-            </div>
-          </div>
-          <button type="submit" disabled={isSubmitting} className="w-full mt-2 bg-gradient-to-br from-indigo-500 to-purple-500 text-white font-bold text-[14px] py-3.5 rounded-xl hover:opacity-90 shadow-lg">
-            {editingTaskId ? "Save Changes" : "Create Task"}
+          
+          <button onClick={() => setSelectedTasks([])} className="w-8 h-8 flex items-center justify-center rounded-xl text-white/40 hover:text-white hover:bg-white/10 transition-colors ml-1" title="Cancel">
+            ✕
           </button>
-        </form>
-      </Modal>
+        </div>
+      )}
 
-      {/* ─── AI FLASHCARD MODAL ─── */}
-      <Modal isOpen={isFlashcardModalOpen} onClose={() => setIsFlashcardModalOpen(false)} title="AI Study Session">
-        {isGenerating ? (
-          <div className="py-20 flex flex-col items-center justify-center text-center">
-            <div className="relative w-20 h-20 mb-6">
-              <div className="absolute inset-0 border-4 border-fuchsia-500/20 rounded-full"></div>
-              <div className="absolute inset-0 border-4 border-fuchsia-500 border-t-transparent rounded-full animate-spin"></div>
-              <div className="absolute inset-0 flex items-center justify-center text-3xl animate-pulse">🤖</div>
-            </div>
-            <h3 className="text-lg font-bold text-slate-200 mb-2">Gemini is reading your syllabus...</h3>
-            <p className="text-white/40 text-[13px] font-bold">Generating custom flashcards for "{activeStudyTask?.title}"</p>
-          </div>
-        ) : flashcards.length > 0 ? (
-          <div className="flex flex-col items-center py-4">
-            
-            <div className="text-[12px] font-bold text-white/40 uppercase tracking-widest mb-6">
-              Card {currentCardIndex + 1} of {flashcards.length}
-            </div>
-
-            <div className="relative w-full max-w-sm h-64 [perspective:1000px] mb-8">
-              <div className={`w-full h-full transition-all duration-500 [transform-style:preserve-3d] cursor-pointer shadow-2xl rounded-2xl ${isFlipped ? '[transform:rotateY(180deg)]' : ''}`} onClick={() => setIsFlipped(!isFlipped)}>
-                <div className="absolute inset-0 [backface-visibility:hidden] bg-gradient-to-br from-[#1a1a24] to-[#0d0d14] border border-white/10 rounded-2xl p-6 flex flex-col items-center justify-center text-center">
-                  <div className="text-3xl mb-4 opacity-50">🤔</div>
-                  <h3 className="text-[16px] font-bold text-slate-200 leading-relaxed">{flashcards[currentCardIndex].front}</h3>
-                  <div className="absolute bottom-4 text-[10px] text-white/30 uppercase font-bold tracking-widest">Tap to flip</div>
-                </div>
-                <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-gradient-to-br from-fuchsia-500/20 to-indigo-500/10 border border-fuchsia-500/30 rounded-2xl p-6 flex flex-col items-center justify-center text-center">
-                  <div className="text-3xl mb-4 opacity-80">💡</div>
-                  <h3 className="text-[15px] font-bold text-fuchsia-200 leading-relaxed">{flashcards[currentCardIndex].back}</h3>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-4 w-full max-w-sm">
-              <button onClick={prevCard} disabled={currentCardIndex === 0} className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white font-bold text-[13px] rounded-xl disabled:opacity-30 transition-colors">← Previous</button>
-              {currentCardIndex === flashcards.length - 1 ? (
-                <button onClick={completeStudySession} className="flex-1 py-3 bg-gradient-to-r from-green-400 to-emerald-500 text-[#0d0d14] font-bold text-[13px] rounded-xl shadow-[0_0_15px_rgba(52,211,153,0.4)] hover:scale-105 transition-all">Finish (+30 XP)</button>
-              ) : (
-                <button onClick={nextCard} className="flex-1 py-3 bg-indigo-500 text-white font-bold text-[13px] rounded-xl hover:bg-indigo-400 transition-colors">Next →</button>
-              )}
-            </div>
-          </div>
-        ) : null}
-      </Modal>
-
-      {/* FIX 1: Toast Variable Bug fixed! */}
+      {/* ─── TOAST NOTIFICATIONS ─── */}
       {toast && (
-        <div className={`fixed bottom-6 right-6 z-[100] px-5 py-3 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3 animate-[fadeIn_0.3s_ease-out] border ${toast.type === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-green-500/10 border-green-500/30 text-green-400'}`}>
-          {toast.type === 'success' && <div className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center">✓</div>}
-          <span className="text-[13px] font-bold">{toast.message}</span>
+        <div className={`fixed bottom-6 right-6 z-[100] px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-[fadeIn_0.3s_ease-out] border backdrop-blur-md ${toast.type === "error" ? "bg-red-500/10 border-red-500/30 text-red-400" : "bg-green-500/10 border-green-500/30 text-green-400"}`}>
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold ${toast.type === "error" ? "bg-red-500/20" : "bg-green-500/20"}`}>
+            {toast.type === "error" ? "✕" : "✓"}
+          </div>
+          <span className="text-[13px] font-medium">{toast.message}</span>
         </div>
       )}
 

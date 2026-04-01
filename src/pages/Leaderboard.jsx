@@ -3,12 +3,18 @@ import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import { Icon, Icons } from "../components/ui/Icon";
 import Modal from "../components/ui/Modal";
+import ProfileModal from '../components/leaderboard/ProfileModal';
+import LiveActivityFeed from '../components/leaderboard/LiveActivityFeed';
+import SquadChallenges from '../components/leaderboard/SquadChallenges';
+import PrivacyToggle from '../components/leaderboard/PrivacyToggle';
+import NotificationBell from '../components/ui/NotificationBell';
 
 export default function Leaderboard() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   
   const [activeTab, setActiveTab] = useState("global"); 
+  const [timeframe, setTimeframe] = useState("weekly");
   const [globalLeaders, setGlobalLeaders] = useState([]);
   const [squadLeaders, setSquadLeaders] = useState([]);
   const [myRank, setMyRank] = useState(null);
@@ -20,92 +26,103 @@ export default function Leaderboard() {
   const [isSearching, setIsSearching] = useState(false);
   const [toast, setToast] = useState(null);
 
+  const [selectedPilotId, setSelectedPilotId] = useState(null);
+
+  const [squadIds, setSquadIds] = useState([]);
+
   useEffect(() => {
     document.title = "Leaderboard | GradPilot";
   }, []);
 
+  // ─── 🛡️ SECURE MOUNTING & RACE CONDITION AVOIDANCE ───
   useEffect(() => {
-    fetchLeaderboardData();
-  }, [user]);
+    let isMounted = true;
+    if (user?.id) {
+      fetchLeaderboardData(isMounted);
+    }
+    return () => { isMounted = false; };
+  }, [user?.id, timeframe]); // 👈 Only re-run if the user ID specifically changes
 
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
   };
 
-  const fetchLeaderboardData = async () => {
+  // ─── ⚡ HIGH-PERFORMANCE TIME-AWARE FETCHING ───
+  const fetchLeaderboardData = async (isMounted) => {
+    if (!user?.id) return;
     setLoading(true);
     
-    // 💥 SCALABILITY FIX: Limit to Top 50 Global Users
-    const { data: globalData } = await supabase
-      .from('profiles')
-      .select('id, full_name, total_xp, current_streak, is_public, equipped_frame')
-      .eq('is_public', true)
-      .order('total_xp', { ascending: false })
-      .limit(50);
-
-    if (globalData) setGlobalLeaders(globalData);
-
-    // 🧠 LOGIC FIX: True Rank - Calculate exact rank securely using the database!
-    const { data: myProfile } = await supabase
-      .from('profiles')
-      .select('total_xp')
-      .eq('id', user.id)
-      .single();
-
-    if (myProfile) {
-      // Ask the database: How many public users have strictly more XP than me?
-      const { count } = await supabase
-        .from('profiles')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_public', true)
-        .gt('total_xp', myProfile.total_xp);
-      
-      // My rank is that count + 1!
-      setMyRank((count || 0) + 1);
-    }
-
-    // ─── SQUAD & FRIEND LOGIC ───
-    const { data: friendships } = await supabase
-      .from('friendships')
-      .select('*')
-      .or(`requester_id.eq.${user.id},receiver_id.eq.${user.id}`);
-
-    if (friendships) {
-      const acceptedFriendsIds = friendships
-        .filter(f => f.status === 'accepted')
-        .map(f => f.requester_id === user.id ? f.receiver_id : f.requester_id);
-      
-      acceptedFriendsIds.push(user.id); // Add yourself to the squad
-      
-      // 💥 BUG FIX: Fetch Squad Data Explicitly
-      // (If we just filtered the Top 50 global list, lower-ranked friends would vanish!)
-      const { data: squadData } = await supabase
-        .from('profiles')
-        .select('id, full_name, total_xp, current_streak, is_public, equipped_frame')
-        .in('id', acceptedFriendsIds)
-        .order('total_xp', { ascending: false });
-        
-      if (squadData) setSquadLeaders(squadData);
-
-      const pending = friendships
-        .filter(f => f.status === 'pending' && f.receiver_id === user.id)
-        .map(f => f.requester_id);
-      
-      if (pending.length > 0) {
-        const { data: requestsData } = await supabase
-          .from('profiles')
-          .select('id, full_name, total_xp, current_streak, is_public, equipped_frame')
-          .in('id', pending);
-        setPendingRequests(requestsData || []);
-      } else {
-        setPendingRequests([]);
-      }
-    }
+    // 🧠 DYNAMIC XP COLUMN: Switches DB queries based on the selected filter
+    const xpCol = timeframe === 'weekly' ? 'weekly_xp' : timeframe === 'monthly' ? 'monthly_xp' : 'total_xp';
     
-    setLoading(false);
+    try {
+      // 1. Parallel Fetch (Global, Profile, Friendships)
+      // Note: If weekly_xp doesn't exist in your DB yet, this will fallback to total_xp in the UI gracefully.
+      const [globalRes, myProfileRes, friendshipsRes] = await Promise.all([
+        supabase.from('profiles').select(`id, full_name, ${xpCol}, current_streak, is_public, equipped_frame`).eq('is_public', true).order('pilot_rating', { ascending: false }).limit(50),
+        supabase.from('profiles').select(xpCol).eq('id', user.id).single(),
+        supabase.from('friendships').select('*').or(`requester_id.eq.${user.id},receiver_id.eq.${user.id}`)
+      ]);
+
+      if (globalRes.error) throw globalRes.error;
+      if (myProfileRes.error) throw myProfileRes.error;
+
+      if (isMounted) setGlobalLeaders(globalRes.data || []);
+
+      // 2. Fetch True Dynamic Rank
+      if (myProfileRes.data) {
+        const myXp = myProfileRes.data[xpCol] || 0;
+        const { count, error: countErr } = await supabase
+          .from('profiles').select('*', { count: 'exact', head: true })
+          .eq('is_public', true).gt(xpCol, myXp);
+        
+        if (!countErr && isMounted) setMyRank((count || 0) + 1);
+      }
+
+      // 3. Process Squad Data
+      if (friendshipsRes.data) {
+        const acceptedFriendsIds = friendshipsRes.data
+          .filter(f => f.status === 'accepted')
+          .map(f => f.requester_id === user.id ? f.receiver_id : f.requester_id);
+        
+        acceptedFriendsIds.push(user.id);
+        if (isMounted) setSquadIds(acceptedFriendsIds);
+        
+        const pendingIds = friendshipsRes.data
+          .filter(f => f.status === 'pending' && f.receiver_id === user.id)
+          .map(f => f.requester_id);
+
+        const [squadRes, pendingRes] = await Promise.all([
+          supabase.from('profiles').select(`id, full_name, ${xpCol}, current_streak, is_public, equipped_frame`).in('id', acceptedFriendsIds).order('pilot_rating', { ascending: false }),
+          pendingIds.length > 0 ? supabase.from('profiles').select(`id, full_name, ${xpCol}, current_streak, is_public, equipped_frame`).in('id', pendingIds) : Promise.resolve({ data: [] })
+        ]);
+
+        if (isMounted) {
+          setSquadLeaders(squadRes.data || []);
+          setPendingRequests(pendingRes.data || []);
+        }
+      }
+    } catch (error) {
+      console.error("🚨 Leaderboard Fetch Error:", error);
+      // Suppress toast if it's just a missing column error while you set up your DB
+      if (!error.message?.includes(xpCol)) {
+        if (isMounted) showToast("Network error. Could not load leaderboard.");
+      }
+    } finally {
+      if (isMounted) setLoading(false);
+    }
   };
 
+  // ─── 🏆 THE LEAGUE SYSTEM ENGINE ───
+  const getLeagueDetails = (rank) => {
+    if (rank <= 3) return { name: "Diamond League", color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/30", icon: "💎" };
+    if (rank <= 10) return { name: "Gold League", color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30", icon: "🏆" };
+    if (rank <= 25) return { name: "Silver League", color: "text-slate-300", bg: "bg-slate-400/10", border: "border-slate-400/30", icon: "⚔️" };
+    return { name: "Bronze League", color: "text-orange-500", bg: "bg-orange-500/10", border: "border-orange-500/30", icon: "🛡️" };
+  };
+
+  // ─── 🤝 FRIEND & SQUAD ACTIONS ───
   const handleSearchUsers = async (e) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
@@ -137,7 +154,7 @@ export default function Leaderboard() {
   const handleAcceptRequest = async (requesterId) => {
     await supabase.from('friendships').update({ status: 'accepted' }).match({ requester_id: requesterId, receiver_id: user.id });
     showToast("Friend added to Squad! 🤝");
-    fetchLeaderboardData(); 
+    fetchLeaderboardData(true); 
   };
 
   // ─── MASTER AVATAR & FRAME RENDERER ───
@@ -180,25 +197,52 @@ export default function Leaderboard() {
   const displayData = activeTab === "global" ? globalLeaders : squadLeaders;
   const top3 = displayData.slice(0, 3);
   const theRest = displayData.slice(3);
+  const xpKey = timeframe === 'weekly' ? 'weekly_xp' : timeframe === 'monthly' ? 'monthly_xp' : 'total_xp';
 
   return (
     <div className="flex flex-col gap-8 relative pb-10 max-w-5xl mx-auto">
       
-      <div className="flex flex-col md:flex-row justify-between items-center gap-6 bg-gradient-to-br from-indigo-500/10 to-purple-500/5 border border-indigo-500/20 p-6 rounded-3xl">
-        <div className="text-center md:text-left">
-          <h2 className="text-slate-100 font-extrabold text-[28px] font-['Plus_Jakarta_Sans'] tracking-tight">Leaderboard</h2>
-          <p className="text-indigo-300/60 text-[14px] mt-1">Compete with the campus or battle your squad.</p>
-        </div>
+      {/* ─── 2-TIER COMMAND HEADER ─── */}
+      <div className="flex flex-col gap-4 mb-2">
         
-        <div className="flex flex-col sm:flex-row items-center gap-4">
-          <div className="flex bg-[#0d0d14] border border-white/10 rounded-xl p-1 shadow-inner">
-            <button onClick={() => setActiveTab("global")} className={`px-4 py-2 rounded-lg text-[13px] font-bold transition-all ${activeTab === 'global' ? 'bg-indigo-500/20 text-indigo-400 shadow-md' : 'text-white/40 hover:text-white/80'}`}>🌍 Global Campus</button>
-            <button onClick={() => setActiveTab("squad")} className={`px-4 py-2 rounded-lg text-[13px] font-bold transition-all flex items-center gap-2 ${activeTab === 'squad' ? 'bg-indigo-500/20 text-indigo-400 shadow-md' : 'text-white/40 hover:text-white/80'}`}>
-              🛡️ My Squad
+        {/* TIER 1: Title & Actions */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 bg-gradient-to-br from-indigo-500/10 to-purple-500/5 border border-indigo-500/20 p-6 rounded-3xl shadow-lg">
+          <div>
+            <h2 className="text-slate-100 font-extrabold text-[28px] font-['Plus_Jakarta_Sans'] tracking-tight">Leaderboard</h2>
+            <p className="text-indigo-300/60 text-[14px] mt-1">Compete with the campus or battle your squad.</p>
+          </div>
+          
+          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+            <PrivacyToggle userId={user?.id} initialStatus={globalLeaders.find(p => p.id === user?.id)?.is_public ?? true} />
+            <NotificationBell userId={user?.id} />
+            <button onClick={() => setIsSearchModalOpen(true)} className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2.5 rounded-xl text-[13px] font-bold transition-all shadow-lg shadow-indigo-500/20 ml-auto md:ml-0">
+              <Icon d={Icons.plus} size={16} /> Add Friend
+            </button>
+          </div>
+        </div>
+
+        {/* TIER 2: Filters Bar */}
+        <div className="flex justify-between items-center bg-[#0d0d14] border border-white/10 p-2 rounded-2xl shadow-inner">
+          <div className="flex bg-white/5 rounded-xl p-1">
+            <button onClick={() => setActiveTab("global")} className={`px-6 py-2 rounded-lg text-[13px] font-bold transition-all ${activeTab === 'global' ? 'bg-indigo-500/20 text-indigo-400 shadow-md' : 'text-white/40 hover:text-white/80'}`}>🌍 Global</button>
+            <button onClick={() => setActiveTab("squad")} className={`px-6 py-2 rounded-lg text-[13px] font-bold transition-all flex items-center gap-2 ${activeTab === 'squad' ? 'bg-indigo-500/20 text-indigo-400 shadow-md' : 'text-white/40 hover:text-white/80'}`}>
+              🛡️ Squad
               {pendingRequests.length > 0 && <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{pendingRequests.length}</span>}
             </button>
           </div>
-          <button onClick={() => setIsSearchModalOpen(true)} className="flex items-center gap-2 bg-white/5 border border-white/10 hover:bg-white/10 text-white px-4 py-2.5 rounded-xl text-[13px] font-bold transition-all"><Icon d={Icons.plus} size={16} /> Add Friend</button>
+
+          <div className="flex items-center gap-2 px-4 border-l border-white/10">
+            <span className="text-[11px] font-bold text-white/40 uppercase tracking-widest hidden sm:block">Time:</span>
+            <select 
+              value={timeframe} 
+              onChange={(e) => setTimeframe(e.target.value)}
+              className="bg-transparent text-indigo-300 text-[13px] font-bold outline-none cursor-pointer"
+            >
+              <option value="weekly" className="bg-[#0d0d14]">This Week</option>
+              <option value="monthly" className="bg-[#0d0d14]">This Month</option>
+              <option value="all_time" className="bg-[#0d0d14]">All Time</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -212,7 +256,7 @@ export default function Leaderboard() {
                   {renderAvatar(req.full_name, req.equipped_frame, "w-8 h-8", "text-[11px]")}
                   <div>
                     <div className="text-[13px] font-bold text-slate-200">{req.full_name}</div>
-                    <div className="text-[11px] text-white/40">{req.total_xp.toLocaleString()} XP</div>
+                    <div className="text-[11px] text-white/40">{(req[xpKey] || 0).toLocaleString()} XP</div>
                   </div>
                 </div>
                 <button onClick={() => handleAcceptRequest(req.id)} className="bg-green-500/20 text-green-400 border border-green-500/30 px-3 py-1.5 rounded-lg text-[11px] font-bold hover:bg-green-500/30 transition-colors">Accept Invite</button>
@@ -231,93 +275,129 @@ export default function Leaderboard() {
         </div>
       )}
 
-      {/* ─── THE PODIUM (TOP 3) ─── */}
-      {top3.length > 0 && (displayData.length > 1 || activeTab === "global") && (
-        <div className="flex justify-center items-end gap-2 md:gap-6 mt-6 mb-8 h-[250px]">
+      {/* ─── MAIN CONTENT GRID ─── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* 👈 LEFT COLUMN: The Leaderboard (Podium + List) */}
+        <div className="lg:col-span-8 flex flex-col gap-6">
           
-          {/* Silver */}
-          {top3[1] && (
-            <div className="flex flex-col items-center animate-[slideUp_0.6s_ease-out]">
-              <div className="relative mb-4">
-                <div className="absolute -top-3 -right-3 text-2xl drop-shadow-lg z-10">🥈</div>
-                {renderAvatar(top3[1].full_name, top3[1].equipped_frame, "w-16 h-16", "text-xl", "border-4 border-slate-300 shadow-[0_0_20px_rgba(203,213,225,0.3)]")}
-              </div>
-              <div className="text-[14px] font-bold text-slate-200 mb-1 truncate max-w-[80px] text-center">{top3[1].full_name?.split(" ")[0]}</div>
-              <div className="text-[12px] font-extrabold text-slate-400 mb-3">{top3[1].total_xp.toLocaleString()} XP</div>
-              <div className="w-24 md:w-32 h-32 bg-gradient-to-t from-slate-400/20 to-slate-400/5 border border-slate-400/20 rounded-t-2xl flex justify-center"><span className="text-slate-400/50 font-black text-4xl mt-4">2</span></div>
-            </div>
-          )}
-
-          {/* Gold */}
-          {top3[0] && (
-            <div className="flex flex-col items-center animate-[slideUp_0.4s_ease-out] z-10">
-              <div className="relative mb-4">
-                <div className="absolute -top-5 -right-4 text-4xl drop-shadow-[0_0_15px_rgba(251,191,36,0.6)] z-10">👑</div>
-                {renderAvatar(top3[0].full_name, top3[0].equipped_frame, "w-20 h-20", "text-2xl", "border-4 border-amber-400 shadow-[0_0_30px_rgba(251,191,36,0.4)]")}
-              </div>
-              <div className="text-[16px] font-black text-amber-400 mb-1 drop-shadow-md truncate max-w-[100px] text-center">{top3[0].full_name?.split(" ")[0]}</div>
-              <div className="text-[13px] font-extrabold text-amber-200/70 mb-3">{top3[0].total_xp.toLocaleString()} XP</div>
-              <div className="w-28 md:w-36 h-40 bg-gradient-to-t from-amber-500/20 to-amber-500/5 border border-amber-500/30 rounded-t-2xl shadow-[0_0_30px_rgba(251,191,36,0.1)] flex justify-center"><span className="text-amber-500/40 font-black text-6xl mt-4">1</span></div>
-            </div>
-          )}
-
-          {/* Bronze */}
-          {top3[2] && (
-            <div className="flex flex-col items-center animate-[slideUp_0.8s_ease-out]">
-              <div className="relative mb-4">
-                <div className="absolute -top-3 -right-3 text-2xl drop-shadow-lg z-10">🥉</div>
-                {renderAvatar(top3[2].full_name, top3[2].equipped_frame, "w-16 h-16", "text-xl", "border-4 border-orange-700 shadow-[0_0_20px_rgba(194,65,12,0.3)]")}
-              </div>
-              <div className="text-[14px] font-bold text-slate-200 mb-1 truncate max-w-[80px] text-center">{top3[2].full_name?.split(" ")[0]}</div>
-              <div className="text-[12px] font-extrabold text-orange-400 mb-3">{top3[2].total_xp.toLocaleString()} XP</div>
-              <div className="w-24 md:w-32 h-24 bg-gradient-to-t from-orange-700/20 to-orange-700/5 border border-orange-700/20 rounded-t-2xl flex justify-center"><span className="text-orange-700/50 font-black text-4xl mt-4">3</span></div>
-            </div>
-          )}
-
-        </div>
-      )}
-
-      {/* ─── THE LIST (RANK 4+) ─── */}
-      {(theRest.length > 0 || top3.length > 0) && (
-        <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden flex flex-col">
-          <div className="grid grid-cols-12 gap-4 p-4 border-b border-white/5 bg-[#0d0d14]/50 text-[11px] font-bold text-white/40 uppercase tracking-widest">
-            <div className="col-span-2 md:col-span-1 text-center">Rank</div>
-            <div className="col-span-6 md:col-span-5 pl-2">Pilot</div>
-            <div className="col-span-4 md:col-span-3 text-right md:text-left">Total XP</div>
-            <div className="col-span-3 hidden md:block text-right pr-4">Active Streak</div>
-          </div>
-
-          <div className="flex flex-col">
-            {theRest.map((pilot, index) => {
-              const actualRank = index + 4; 
-              const isMe = pilot.id === user.id;
-
-              return (
-                <div key={pilot.id} className={`grid grid-cols-12 gap-4 p-4 items-center border-b border-white/5 transition-colors hover:bg-white/[0.03] ${isMe ? 'bg-indigo-500/10 border-l-4 border-l-indigo-500' : ''}`}>
-                  <div className="col-span-2 md:col-span-1 text-center font-bold text-white/30 text-[14px]">#{actualRank}</div>
-                  <div className="col-span-6 md:col-span-5 flex items-center gap-3 pl-2">
-                    
-                    {/* Render Small Avatar */}
-                    {renderAvatar(pilot.full_name, pilot.equipped_frame, "w-8 h-8", "text-[11px]", null, isMe)}
-                    
-                    <div className={`text-[14px] font-bold truncate ${isMe ? 'text-indigo-300' : 'text-slate-200'}`}>
-                      {pilot.full_name} {isMe && <span className="text-[10px] bg-indigo-500/20 px-2 py-0.5 rounded ml-2 text-indigo-200">YOU</span>}
-                    </div>
+          {/* ─── THE PODIUM (TOP 3) ─── */}
+          {top3.length > 0 && (displayData.length > 1 || activeTab === "global") && (
+            <div className="flex justify-center items-end gap-2 md:gap-6 mt-6 mb-8 h-[250px]">
+              
+              {/* Silver */}
+              {top3[1] && (
+                <div onClick={() => setSelectedPilotId(top3[1].id)} className="flex flex-col items-center animate-[slideUp_0.6s_ease-out] cursor-pointer hover:scale-105 transition-transform">
+                  <div className="relative mb-4">
+                    <div className="absolute -top-3 -right-3 text-2xl drop-shadow-lg z-10">🥈</div>
+                    {renderAvatar(top3[1].full_name, top3[1].equipped_frame, "w-16 h-16", "text-xl", "border-4 border-slate-300 shadow-[0_0_20px_rgba(203,213,225,0.3)]")}
                   </div>
-                  <div className="col-span-4 md:col-span-3 font-extrabold text-[14px] text-slate-200 text-right md:text-left">
-                    {pilot.total_xp.toLocaleString()} <span className="text-[10px] text-amber-400 ml-1">XP</span>
-                  </div>
-                  <div className="col-span-3 hidden md:flex justify-end pr-4">
-                    {pilot.current_streak > 0 ? (
-                      <div className="flex items-center gap-1.5 bg-orange-500/10 border border-orange-500/20 px-2.5 py-1 rounded-full text-orange-400 text-[12px] font-bold">🔥 {pilot.current_streak}</div>
-                    ) : (<span className="text-white/20 text-[12px]">-</span>)}
-                  </div>
+                  <div className="text-[14px] font-bold text-slate-200 mb-1 truncate max-w-[80px] text-center">{top3[1].full_name?.split(" ")[0]}</div>
+                  <div className="text-[12px] font-extrabold text-slate-400 mb-3">{(top3[1][xpKey] || 0).toLocaleString()} XP</div>
+                  <div className="w-24 md:w-32 h-32 bg-gradient-to-t from-slate-400/20 to-slate-400/5 border border-slate-400/20 rounded-t-2xl flex justify-center"><span className="text-slate-400/50 font-black text-4xl mt-4">2</span></div>
                 </div>
-              );
-            })}
-          </div>
+              )}
+
+              {/* Gold */}
+              {top3[0] && (
+                <div onClick={() => setSelectedPilotId(top3[0].id)} className="flex flex-col items-center animate-[slideUp_0.4s_ease-out] z-10 cursor-pointer hover:scale-105 transition-transform">
+                  <div className="relative mb-4">
+                    <div className="absolute -top-5 -right-4 text-4xl drop-shadow-[0_0_15px_rgba(251,191,36,0.6)] z-10">👑</div>
+                    {renderAvatar(top3[0].full_name, top3[0].equipped_frame, "w-20 h-20", "text-2xl", "border-4 border-amber-400 shadow-[0_0_30px_rgba(251,191,36,0.4)]")}
+                  </div>
+                  <div className="text-[16px] font-black text-amber-400 mb-1 drop-shadow-md truncate max-w-[100px] text-center">{top3[0].full_name?.split(" ")[0]}</div>
+                  <div className="text-[13px] font-extrabold text-amber-200/70 mb-3">{(top3[0][xpKey] || 0).toLocaleString()} XP</div>
+                  <div className="w-28 md:w-36 h-40 bg-gradient-to-t from-amber-500/20 to-amber-500/5 border border-amber-500/30 rounded-t-2xl shadow-[0_0_30px_rgba(251,191,36,0.1)] flex justify-center"><span className="text-amber-500/40 font-black text-6xl mt-4">1</span></div>
+                </div>
+              )}
+
+              {/* Bronze */}
+              {top3[2] && (
+                <div onClick={() => setSelectedPilotId(top3[2].id)} className="flex flex-col items-center animate-[slideUp_0.8s_ease-out] cursor-pointer hover:scale-105 transition-transform">
+                  <div className="relative mb-4">
+                    <div className="absolute -top-3 -right-3 text-2xl drop-shadow-lg z-10">🥉</div>
+                    {renderAvatar(top3[2].full_name, top3[2].equipped_frame, "w-16 h-16", "text-xl", "border-4 border-orange-700 shadow-[0_0_20px_rgba(194,65,12,0.3)]")}
+                  </div>
+                  <div className="text-[14px] font-bold text-slate-200 mb-1 truncate max-w-[80px] text-center">{top3[2].full_name?.split(" ")[0]}</div>
+                  <div className="text-[12px] font-extrabold text-orange-400 mb-3">{(top3[2][xpKey] || 0).toLocaleString()} XP</div>
+                  <div className="w-24 md:w-32 h-24 bg-gradient-to-t from-orange-700/20 to-orange-700/5 border border-orange-700/20 rounded-t-2xl flex justify-center"><span className="text-orange-700/50 font-black text-4xl mt-4">3</span></div>
+                </div>
+              )}
+
+            </div>
+          )}
+
+          {/* ─── THE LIST (RANK 4+) ─── */}
+          {(theRest.length > 0 || top3.length > 0) && (
+            <div className="bg-white/5 border border-white/10 rounded-3xl overflow-hidden flex flex-col">
+              <div className="grid grid-cols-12 gap-4 p-4 border-b border-white/5 bg-[#0d0d14]/50 text-[11px] font-bold text-white/40 uppercase tracking-widest">
+                <div className="col-span-2 md:col-span-1 text-center">Rank</div>
+                <div className="col-span-6 md:col-span-5 pl-2">Pilot</div>
+                <div className="col-span-4 md:col-span-3 text-right md:text-left">Total XP</div>
+                <div className="col-span-3 hidden md:block text-right pr-4">Active Streak</div>
+              </div>
+
+              <div className="flex flex-col">
+                {theRest.map((pilot, index) => {
+                  const actualRank = index + 4; 
+                  const isMe = pilot.id === user.id;
+
+                  const displayXp = pilot[timeframe === 'weekly' ? 'weekly_xp' : timeframe === 'monthly' ? 'monthly_xp' : 'total_xp'] || 0;
+                  const league = getLeagueDetails(actualRank); 
+
+                  return (
+                    <div key={pilot.id} onClick={() => setSelectedPilotId(pilot.id)} className={`grid grid-cols-12 gap-4 p-4 items-center border-b border-white/5 transition-all hover:bg-white/[0.05] cursor-pointer ${isMe ? 'bg-indigo-500/10 border-l-4 border-l-indigo-500' : ''}`}>
+                      <div className="col-span-2 md:col-span-1 text-center font-bold text-white/30 text-[14px]">#{actualRank}</div>
+                      
+                      <div className="col-span-6 md:col-span-5 flex items-center gap-3 pl-2 min-w-0">
+                        {renderAvatar(pilot.full_name, pilot.equipped_frame, "w-8 h-8 shrink-0", "text-[11px]", null, isMe)}
+                        <div className="min-w-0 flex flex-col items-start">
+                          <div className={`text-[14px] font-bold truncate w-full ${isMe ? 'text-indigo-300' : 'text-slate-200'}`}>
+                            {pilot.full_name} {isMe && <span className="text-[10px] bg-indigo-500/20 px-2 py-0.5 rounded ml-2 text-indigo-200">YOU</span>}
+                          </div>
+                          
+                          {activeTab === 'global' && (
+                            <div className={`mt-1 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border flex items-center gap-1 ${league.color} ${league.bg} ${league.border}`}>
+                              {league.icon} {league.name}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="col-span-4 md:col-span-3 font-extrabold text-[14px] text-slate-200 text-right md:text-left">
+                        {displayXp.toLocaleString()} <span className="text-[10px] text-amber-400 ml-1">XP</span>
+                      </div>
+                      
+                      <div className="col-span-3 hidden md:flex justify-end pr-4">
+                        {pilot.current_streak > 0 ? (
+                          <div className="flex items-center gap-1.5 bg-orange-500/10 border border-orange-500/20 px-2.5 py-1 rounded-full text-orange-400 text-[12px] font-bold">🔥 {pilot.current_streak}</div>
+                        ) : (<span className="text-white/20 text-[12px]">-</span>)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          
         </div>
-      )}
+
+        {/* 👉 RIGHT COLUMN: The Social Engine (Feed + Challenges) */}
+        {activeTab === 'squad' && (
+          <div className="lg:col-span-4 flex flex-col gap-6 h-[600px] lg:sticky lg:top-6">
+            
+            <div className="flex-1 min-h-[250px]">
+              <SquadChallenges currentUserId={user?.id} squadIds={squadIds} />
+            </div>
+            
+            <div className="flex-1 min-h-[300px]">
+              <LiveActivityFeed squadIds={squadIds} />
+            </div>
+
+          </div>
+        )}
+
+      </div>
 
       {/* ─── SEARCH & ADD FRIENDS MODAL ─── */}
       <Modal isOpen={isSearchModalOpen} onClose={() => { setIsSearchModalOpen(false); setSearchResults([]); setSearchQuery(""); }} title="Find Squad Members">
@@ -355,6 +435,14 @@ export default function Leaderboard() {
           <span className="text-[13px] font-medium">{toast}</span>
         </div>
       )}
+
+      {/* 🕵️‍♂️ PILOT DOSSIER MODAL */}
+      <ProfileModal 
+        isOpen={!!selectedPilotId} 
+        onClose={() => setSelectedPilotId(null)} 
+        pilotId={selectedPilotId} 
+      />
+
     </div>
   );
 }

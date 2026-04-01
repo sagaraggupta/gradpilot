@@ -1,5 +1,3 @@
-import DailyQuests from '../components/dashboard/DailyQuests';
-import PomodoroPet from '../components/dashboard/PomodoroPet';
 import React, { useState, useEffect, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Icon, Icons } from "../components/ui/Icon";
@@ -8,6 +6,9 @@ import Badge from "../components/ui/Badge";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import { generateFCMToken } from '../lib/firebase';
+import AIInsightsWidget from '../components/dashboard/AIInsightsWidget';
+import AIDailyCommander from '../components/dashboard/AIDailyCommander';
+import StartMyDayModal from '../components/dashboard/StartMyDayModal';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -21,142 +22,155 @@ export default function Dashboard() {
   const [expenses, setExpenses] = useState([]);
   const [habits, setHabits] = useState([]);
   const [settings, setSettings] = useState({ monthly_budget: 7000 });
+  const [isPlannerOpen, setIsPlannerOpen] = useState(false);
 
-  // ─── BULLETPROOF LOCAL DATE MATH (Fixing the UTC Trap) ───
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, '0');
-  const day = String(today.getDate()).padStart(2, '0');
-  const todayStr = `${year}-${month}-${day}`; // Pure Local Date String
-  const currentDayName = today.toLocaleDateString('en-US', { weekday: 'short' });
+// ─── 🛡️ BULLETPROOF LOCAL DATE MATH (Bug 4 Fixed) ───
+  // We wrap this in useMemo so 'today' doesn't recreate on every single React render!
+  const { today, todayStr, currentDayName, yesterdayStr } = useMemo(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    
+    const yd = new Date(d);
+    yd.setDate(yd.getDate() - 1);
+    const yy = yd.getFullYear();
+    const ym = String(yd.getMonth() + 1).padStart(2, '0');
+    const yday = String(yd.getDate()).padStart(2, '0');
+
+    return {
+      today: d, // 👈 FIX: We now export the actual 'today' object!
+      todayStr: `${y}-${m}-${day}`,
+      currentDayName: d.toLocaleDateString('en-US', { weekday: 'short' }),
+      yesterdayStr: `${yy}-${ym}-${yday}`
+    };
+  }, []); // Empty dependency array = only runs once when component mounts!
 
   useEffect(() => {
     document.title = "Dashboard | GradPilot";
   }, []);
 
-  // ─── FETCH ALL DATA ───
+  // ─── 🛡️ STRICT FETCH ALL DATA (Bugs 1 & 5 Fixed) ───
   useEffect(() => {
+    let isMounted = true; // Prevents memory leaks if they navigate away during fetch
+
     const fetchDashboardData = async () => {
-      if (!user) return;
+      if (!user?.id) return; // CRITICAL: Strict null guard
       
       setLoading(true);
       setError(null);
       
       try {
-        // 🚀 THE BOUNCER: Stop right there! Do you have a profile?
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .maybeSingle(); 
+        const { data: profile, error: profileErr } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle(); 
+        
+        if (profileErr) throw profileErr;
 
         if (!profile || !profile.full_name) {
-          console.log("Intruder alert! Sending to Onboarding...");
-          navigate('/onboarding');
-          return; // 🛑 Stop the Dashboard from rendering!
+          if (isMounted) navigate('/onboarding');
+          return; 
         }
 
-        // 🟢 They passed the check! Load their actual data!
-        const [
-          { data: tData }, { data: attData }, { data: eData }, { data: hData }
-        ] = await Promise.all([
+        const [ tRes, attRes, eRes, hRes ] = await Promise.all([
           supabase.from('tasks').select('*').eq('user_id', user.id).order('due', { ascending: true }),
           supabase.from('attendance').select('*').eq('user_id', user.id),
           supabase.from('expenses').select('*').eq('user_id', user.id),
           supabase.from('habits').select('*').eq('user_id', user.id).order('created_at', { ascending: true })
         ]);
 
-        // Only update specific states
-        setTasks(tData || []);
-        setAttendance(attData || []);
-        setExpenses(eData || []);
-        setHabits(hData || []);
-        
-        // 🚀 Bonus: We use the profile we already fetched for their budget!
-        setSettings(profile || { monthly_budget: 7000 }); 
+        if (isMounted) {
+          setTasks(tRes.data || []);
+          setAttendance(attRes.data || []);
+          setExpenses(eRes.data || []);
+          setHabits(hRes.data || []);
+          setSettings(profile || { monthly_budget: 7000 }); 
+        }
       } catch (err) {
         console.error("Dashboard fetch failed:", err);
-        setError("Failed to load your dashboard data. Please try refreshing.");
+        if (isMounted) setError("Failed to load your dashboard data. Please try refreshing.");
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     fetchDashboardData();
-  }, [user, navigate]);
+    return () => { isMounted = false; }; // Cleanup function
+  }, [user?.id, navigate]);
 
-  // ─── QUICK ACTIONS ───
+  // ─── 🛡️ QUICK ACTIONS WITH ROLLBACKS (Bugs 2 & 3 Fixed) ───
   const toggleHabit = async (habit) => {
     const isDoneToday = habit.last_completed === todayStr;
-    let newStreak = habit.streak;
-    let newLastCompleted = habit.last_completed;
+    const newStreak = isDoneToday ? Math.max(0, habit.streak - 1) : ((habit.last_completed === yesterdayStr) ? habit.streak + 1 : 1);
+    const newLastCompleted = isDoneToday ? (newStreak > 0 ? yesterdayStr : null) : todayStr;
 
-    if (isDoneToday) {
-      newStreak = Math.max(0, habit.streak - 1);
-      newLastCompleted = newStreak > 0 ? yesterdayStr : null; // Reverts to yesterday to save the streak!
-    } else {
-      // Local timezone fix for yesterday too!
-      const yesterday = new Date(); 
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yYear = yesterday.getFullYear();
-      const yMonth = String(yesterday.getMonth() + 1).padStart(2, '0');
-      const yDay = String(yesterday.getDate()).padStart(2, '0');
-      const yesterdayStr = `${yYear}-${yMonth}-${yDay}`;
-      
-      newStreak = (habit.last_completed === yesterdayStr) ? newStreak + 1 : 1;
-      newLastCompleted = todayStr;
-    }
-
-    // Only update the habits state (Prevents the whole dashboard from re-rendering!)
+    // 1. Optimistic UI Update
+    const previousHabits = [...habits];
     setHabits(prev => prev.map(h => h.id === habit.id ? { ...h, streak: newStreak, last_completed: newLastCompleted } : h));
-    await supabase.from('habits').update({ streak: newStreak, last_completed: newLastCompleted }).eq('id', habit.id).eq('user_id', user.id);
+    
+    // 2. Database Update
+    const { error } = await supabase.from('habits').update({ streak: newStreak, last_completed: newLastCompleted }).eq('id', habit.id).eq('user_id', user.id);
+    
+    // 3. Rollback on failure
+    if (error) {
+      console.error("Failed to toggle habit:", error);
+      setHabits(previousHabits);
+      alert("Failed to update habit. Please check your connection.");
+    }
   };
 
   const markTaskDone = async (id) => {
-    // 1. Update the local task UI
+    // 1. Optimistic UI Update
+    const previousTasks = [...tasks];
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: "completed", progress: 100 } : t));
     
-    // 2. Save task to database
-    await supabase.from('tasks').update({ status: "completed", progress: 100 }).eq('id', id).eq('user_id', user.id);
+    // 2. Database Update
+    const { error } = await supabase.from('tasks').update({ status: "completed", progress: 100 }).eq('id', id).eq('user_id', user.id);
 
-    // 🚀 3. AUTO-VERIFY QUEST: Check if they have the assignment quest active today!
-    const todayStr = new Date().toISOString().split('T')[0];
-    
-    // Look for the specific quest in the database
-    const { data: activeQuest } = await supabase
-      .from('daily_quests')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('assigned_date', todayStr)
-      .eq('title', 'Organize your upcoming assignments') // Matches the text exactly
-      .eq('is_completed', false)
-      .maybeSingle();
+    // 3. Rollback on failure
+    if (error) {
+      console.error("Failed to complete task:", error);
+      setTasks(previousTasks);
+      alert("Failed to complete task. Please check your connection.");
+      return;
+    }
 
-    // If they have the quest, automatically complete it for them!
+    // 🚀 AUTO-VERIFY QUEST
+    const { data: activeQuest } = await supabase.from('daily_quests')
+      .select('*').eq('user_id', user.id).eq('assigned_date', todayStr)
+      .eq('title', 'Organize your upcoming assignments').eq('is_completed', false).maybeSingle();
+
     if (activeQuest) {
-      await supabase
-        .from('daily_quests')
-        .update({ is_completed: true })
-        .eq('id', activeQuest.id);
-        
-      console.log(`System Verified! Awarded ${activeQuest.xp_reward} XP!`);
-      // Optional: You can trigger a little confetti or toast notification here!
+      await supabase.from('daily_quests').update({ is_completed: true }).eq('id', activeQuest.id);
     }
   };
 
-  // ─── DYNAMIC CALCULATIONS ───
+  // ─── 🧠 DYNAMIC CALCULATIONS & SMART PRIORITY ENGINE (Feature #3) ───
   const dashboardStats = useMemo(() => {
     const hour = today.getHours();
     const greeting = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
 
     const classesToday = attendance.filter(c => c.days && c.days.includes(currentDayName));
     
+    // 🚀 THE SMART PRIORITY ENGINE
     const pendingTasks = tasks.filter(t => t.status !== "completed");
-    const urgentTasks = pendingTasks.sort((a, b) => {
-      if (a.priority === 'high' && b.priority !== 'high') return -1;
-      if (a.priority !== 'high' && b.priority === 'high') return 1;
-      return 0;
-    }).slice(0, 4);
+    const urgentTasks = pendingTasks.map(task => {
+      let score = 0;
+      
+      // 1. Base Priority Weight
+      if (task.priority === 'High') score += 20;
+      if (task.priority === 'Medium') score += 10;
+      
+      // 2. Deadline Weight (The closer it is, the higher the score)
+      const dueDate = new Date(task.due);
+      const diffTime = Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24));
+      
+      if (diffTime < 0) score += 100;      // 🚨 OVERDUE: Maximum Priority
+      else if (diffTime === 0) score += 50; // ⚠️ DUE TODAY: Critical
+      else if (diffTime <= 2) score += 30;  // 🟡 DUE SOON: Elevated
+      
+      return { ...task, urgencyScore: score };
+    })
+    .sort((a, b) => b.urgencyScore - a.urgencyScore) // Sort by true urgency
+    .slice(0, 4); // Take top 4
 
     const habitsLeft = habits.filter(h => h.last_completed !== todayStr).length;
 
@@ -164,7 +178,14 @@ export default function Dashboard() {
     const currentYear = today.getFullYear();
     const monthlyExpenses = expenses.filter(e => new Date(e.date).getMonth() === currentMonth && new Date(e.date).getFullYear() === currentYear);
     const spentThisMonth = monthlyExpenses.reduce((acc, e) => acc + Number(e.amount), 0);
-    const spentToday = expenses.filter(e => e.date === todayStr).reduce((acc, e) => acc + Number(e.amount), 0);
+    // 🐛 FIX: Parse the date object safely so timestamps don't break the filter
+    const spentToday = expenses.filter(e => {
+      if (!e.date) return false;
+      const expDate = new Date(e.date);
+      return expDate.getDate() === today.getDate() && 
+             expDate.getMonth() === today.getMonth() && 
+             expDate.getFullYear() === today.getFullYear();
+    }).reduce((acc, e) => acc + Number(e.amount), 0);
     const budgetRemaining = Math.max(0, (settings.monthly_budget || 7000) - spentThisMonth);
 
     return { greeting, classesToday, pendingTasks, urgentTasks, habitsLeft, spentToday, budgetRemaining };
@@ -188,30 +209,15 @@ export default function Dashboard() {
   return (
     <div className="flex flex-col gap-6 relative pb-10">
       
-      {/* ─── HEADER ─── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-        <div>
-          <h2 className="text-[28px] font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 font-['Sora'] tracking-tight">
-            {dashboardStats.greeting}, Pilot.
-          </h2>
-          <p className="text-white/50 text-[14px] mt-1 font-medium">
-            It's {today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}. Here is your briefing.
-          </p>
-        </div>
+      {/* ─── 🤖 AI DAILY COMMANDER HEADER ─── */}
+      <AIDailyCommander 
+        stats={dashboardStats} 
+        userName={user?.user_metadata?.full_name?.split(' ')[0] || "Pilot"}
+        onStartDay={() => setIsPlannerOpen(true)} 
+      />
 
-        <div className="flex gap-2">
-          <div className="bg-[#0d0d14] border border-white/10 px-4 py-2 rounded-xl flex items-center gap-2 text-[12px] font-bold text-slate-200 shadow-lg">
-            <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" /> {dashboardStats.pendingTasks.length} Pending Tasks
-          </div>
-          <div className="bg-[#0d0d14] border border-white/10 px-4 py-2 rounded-xl flex items-center gap-2 text-[12px] font-bold text-slate-200 shadow-lg">
-            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" /> {dashboardStats.habitsLeft} Habits Left
-          </div>
-        </div>
-      </div>
-
-      <PomodoroPet profile={settings} />
-
-      <DailyQuests />
+      {/* 🚀 THE NEW PROACTIVE AI ENGINE */}
+      <AIInsightsWidget />
 
       {/* ─── BENTO BOX GRID ─── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -390,6 +396,13 @@ export default function Dashboard() {
           Launch Focus Timer
         </Link>
       </div>
+
+      {/* 🗺️ SMART DAY PLANNER MODAL */}
+      <StartMyDayModal 
+        isOpen={isPlannerOpen} 
+        onClose={() => setIsPlannerOpen(false)} 
+        stats={dashboardStats} 
+      />
 
     </div>
   );

@@ -12,6 +12,9 @@ import Login from "./pages/Login";
 // import ResetPassword from "./pages/ResetPassword"; 
 import Onboarding from "./pages/Onboarding"; 
 
+import useSmartNotifications from './hooks/useSmartNotifications';
+import InstallBanner from './components/ui/InstallBanner';
+
 // ─── App Pages (Lazy Loaded for Performance) ───
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Assignments = lazy(() => import("./pages/Assignments"));
@@ -45,6 +48,7 @@ const SuspenseLayout = () => (
 );
 
 export default function App() {
+  useSmartNotifications();
   return (
     <BrowserRouter>
       <Routes>
@@ -79,6 +83,10 @@ export default function App() {
         {/* Redirect unknown routes back to home for logged-out users */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+
+      {/* 🚀 The Global PWA Installer Banner */}
+      <InstallBanner />
+
     </BrowserRouter>
   );
 }
