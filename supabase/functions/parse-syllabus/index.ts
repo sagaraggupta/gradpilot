@@ -13,7 +13,6 @@ serve(async (req) => {
   }
 
   try {
-    // 🔒 SECURITY GATE: Verify the user making this request is logged in!
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) throw new Error("Missing Authorization header.");
 
@@ -30,16 +29,26 @@ serve(async (req) => {
       });
     }
 
-    // 🟢 User is authenticated! Proceed with parsing.
     const { syllabusText } = await req.json()
+    
+    // 🛡️ COST CONTROL: Prevent massive syllabus uploads (Fix #2)
+    if (!syllabusText || typeof syllabusText !== 'string') {
+      return new Response(JSON.stringify({ error: 'Invalid syllabus text.' }), { status: 400, headers: corsHeaders });
+    }
+    if (syllabusText.length > 15000) {
+      return new Response(JSON.stringify({ error: 'Syllabus exceeds 15,000 character limit. Please paste smaller sections.' }), { status: 400, headers: corsHeaders });
+    }
     
     const geminiApiKey = Deno.env.get('GEMINI_API_KEY')
     const groqApiKey = Deno.env.get('GROQ_API_KEY')
     
+    // 🧠 PROMPT UPGRADE: Strict formatting & Date Normalization (Fix #4 & #5)
     const prompt = `
       Extract all assignments, exams, and readings from the following syllabus text.
-      Return ONLY a pure JSON array of objects.
-      Structure: [{"title": "Name", "subject": "General", "due": "YYYY-MM-DD", "priority": "medium"}]
+      Return ONLY a pure JSON array of objects. NO explanations. NO markdown tags.
+      Structure: [{"title": "Name", "subject": "General", "due": "YYYY-MM-DD", "priority": "High|Medium|Low"}]
+      
+      CRITICAL RULE: Convert all relative dates (e.g. "Next Monday", "Jan 12") into strict "YYYY-MM-DD" format using the current year.
       
       Syllabus Text:
       ${syllabusText}
@@ -48,7 +57,6 @@ serve(async (req) => {
     let jsonString = "";
 
     try {
-      // 🚀 ATTEMPT 1: Google Gemini (1.5 Flash)
       if (!geminiApiKey) throw new Error("GEMINI_API_KEY is missing!")
       
       const genAI = new GoogleGenerativeAI(geminiApiKey)
@@ -60,10 +68,10 @@ serve(async (req) => {
     } catch (geminiError: any) {
       console.warn("Gemini failed, initiating Groq Fallback:", geminiError.message)
       
-      // 🛡️ ATTEMPT 2: Groq Fallback (LLaMA 3.1)
       if (!groqApiKey) throw new Error("Both Gemini and Groq failed. No keys available.");
 
-      const groqResponse = await fetch("[https://api.groq.com/openai/v1/chat/completions](https://api.groq.com/openai/v1/chat/completions)", {
+      // 🛡️ CRITICAL BUG FIX: Removed Markdown formatting from the Groq URL (Fix #1)
+      const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${groqApiKey}`,
@@ -72,7 +80,7 @@ serve(async (req) => {
         body: JSON.stringify({
           model: "llama-3.1-8b-instant",
           messages: [
-            { role: "system", content: "You are a data extractor. You only output pure JSON arrays." },
+            { role: "system", content: "You are a data extractor. You output ONLY valid JSON arrays. Do not wrap in markdown." },
             { role: "user", content: prompt }
           ],
           temperature: 0.1
@@ -87,11 +95,20 @@ serve(async (req) => {
       jsonString = groqData.choices[0].message.content;
     }
     
-    // 🧹 BULLETPROOF CLEANUP: Match the JSON array directly, ignoring conversational text
     const jsonMatch = jsonString.match(/\[[\s\S]*\]/);
     if (!jsonMatch) throw new Error("AI did not return a valid JSON array.");
 
-    const parsedData = JSON.parse(jsonMatch[0]);
+    // 🛡️ SCHEMA VALIDATION: Check that it parses safely before sending to React (Fix #3)
+    let parsedData;
+    try {
+      parsedData = JSON.parse(jsonMatch[0]);
+      if (!Array.isArray(parsedData)) throw new Error("Parsed data is not an array.");
+      
+      // Basic check: Filter out any items that lack a title or due date to prevent UI crashes
+      parsedData = parsedData.filter(item => item.title && item.due);
+    } catch (parseError) {
+      throw new Error("Failed to parse AI output into valid JSON schema.");
+    }
 
     return new Response(
       JSON.stringify(parsedData),

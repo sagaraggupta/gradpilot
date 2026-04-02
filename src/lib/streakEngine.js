@@ -1,6 +1,9 @@
 import { supabase } from "./supabase";
 
-// Generates the current local date formatted as YYYY-MM-DD
+// Constants for Game Economy Balance
+const DAILY_XP_CAP = 500;
+const DECAY_PERCENTAGE = 0.05; // Lose 5% of Total XP if a streak breaks
+
 export const getLocalYYYYMMDD = () => {
   const d = new Date();
   const year = d.getFullYear();
@@ -9,8 +12,6 @@ export const getLocalYYYYMMDD = () => {
   return `${year}-${month}-${day}`;
 };
 
-// ─── UTILITY: BULLETPROOF DATE MATH ───
-// Calculates the difference in days between two date strings, forcing pure UTC midnights to avoid timezone/DST shifts
 const getDaysDifference = (dateStr1, dateStr2) => {
   const [y1, m1, d1] = dateStr1.split('-').map(Number);
   const [y2, m2, d2] = dateStr2.split('-').map(Number);
@@ -21,32 +22,34 @@ const getDaysDifference = (dateStr1, dateStr2) => {
   return Math.floor((utc2 - utc1) / (1000 * 60 * 60 * 24));
 };
 
-// ─── PURE LOGIC FUNCTIONS (Easily Testable) ───
-
-// Evaluates whether a user's streak should be maintained, saved by a freeze, or reset to zero
+// ─── 1. THE STREAK CHECKER & DECAY SYSTEM ───
 export const calculateStreakCheckUpdates = (profile, todayStr) => {
   if (!profile || !profile.last_active_date) return null;
 
   const daysMissed = getDaysDifference(profile.last_active_date, todayStr) - 1;
 
-  // If the user has been active yesterday or today, the streak is safe
   if (daysMissed <= 0) return null;
 
   let newFreezes = profile.streak_freezes_owned || 0;
   let newStreak = profile.current_streak || 0;
+  let newTotalXp = profile.total_xp || 0;
   let message = "";
   let type = "";
 
-  if (newFreezes >= daysMissed) {
-    // User missed days but has enough freezes to cover the gap
+  // 🛡️ STREAK FREEZE LOGIC
+  if (newFreezes > 0 && newFreezes >= daysMissed) {
     newFreezes -= daysMissed;
-    message = `Phew! You missed ${daysMissed} day(s), but your Streak Freeze saved your ${newStreak}-day streak!`;
+    message = `Phew! You missed ${daysMissed} day(s), but your Freeze saved your ${newStreak}-day streak!`;
     type = "freeze_used";
   } else {
-    // User missed days and lacks freezes; reset the streak
+    // 💥 INACTIVITY PENALTY (DECAY SYSTEM)
+    // If they lose a streak, they lose 5% of their total XP!
+    const penalty = Math.floor(newTotalXp * DECAY_PERCENTAGE);
+    newTotalXp = Math.max(0, newTotalXp - penalty);
+    
     newStreak = 0;
     newFreezes = 0; 
-    message = "Oh no! You missed a day and lost your streak. Time to start rebuilding!";
+    message = `You lost your streak and took a -${penalty} XP inactivity penalty. Time to rebuild!`;
     type = "streak_lost";
   }
 
@@ -54,13 +57,14 @@ export const calculateStreakCheckUpdates = (profile, todayStr) => {
     updates: {
       current_streak: newStreak,
       streak_freezes_owned: newFreezes,
+      total_xp: newTotalXp,
       last_streak_check_date: todayStr
     },
-    result: { message, type, newStreak, newFreezes }
+    result: { message, type, newStreak, newFreezes, newTotalXp }
   };
 };
 
-// Calculates new state for XP, current/longest streaks, and daily focus limits
+// ─── 2. THE EARNER & ANTI-SPAM CAP ───
 export const calculateActivityUpdates = (profile, todayStr, xpToAdd, focusMinutesToAdd = 0) => {
   if (!profile) return null;
 
@@ -70,46 +74,62 @@ export const calculateActivityUpdates = (profile, todayStr, xpToAdd, focusMinute
 
   let newFocus = profile.focus_minutes_today || 0;
   let newSessions = profile.sessions_today || 0;
+  let xpEarnedToday = profile.xp_earned_today || 0;
 
-  // Detect a new day to extend the streak and reset daily counters
+  // 🔄 NEW DAY RESET LOGIC
   if (profile.last_active_date !== todayStr) {
     newStreak += 1;
     if (newStreak > newLongest) newLongest = newStreak;
     streakExtendedToday = true;
+    
+    // Reset daily counters
     newFocus = 0;
     newSessions = 0;
+    xpEarnedToday = 0; 
   }
 
-  // Accumulate focus time and session counts
+  // 🛡️ ANTI-SPAM DAILY XP CAP LOGIC
+  let actualXpToAdd = xpToAdd;
+  
+  if (xpEarnedToday + xpToAdd > DAILY_XP_CAP) {
+    // Only give them whatever XP is left before hitting the cap
+    actualXpToAdd = Math.max(0, DAILY_XP_CAP - xpEarnedToday);
+  }
+
+  xpEarnedToday += actualXpToAdd;
+  const newTotalXp = (profile.total_xp || 0) + actualXpToAdd;
+
+  // Accumulate focus time
   newFocus += focusMinutesToAdd;
-  if (focusMinutesToAdd > 0) {
-    newSessions += 1; 
-  }
-
-  const newXp = (profile.total_xp || 0) + xpToAdd;
+  if (focusMinutesToAdd > 0) newSessions += 1; 
 
   return {
     updates: {
-      total_xp: newXp,
+      total_xp: newTotalXp,
       current_streak: newStreak,
       longest_streak: newLongest,
       focus_minutes_today: newFocus,
       sessions_today: newSessions,
+      xp_earned_today: xpEarnedToday, // 👈 Track their daily limit
       last_active_date: todayStr
     },
-    result: { newXp, newStreak, streakExtendedToday, newFocus, newSessions }
+    result: { 
+      newXp: newTotalXp, 
+      newStreak, 
+      streakExtendedToday, 
+      newFocus, 
+      newSessions,
+      hitCap: actualXpToAdd < xpToAdd // Tells the frontend if they hit the cap!
+    }
   };
 };
 
 // ─── SUPABASE EXECUTION LAYER ───
 
-// 1. THE CHECKER
-// Fetches the user profile and executes the streak evaluation logic, updating the DB if necessary
 export const runBackgroundStreakCheck = async (userId) => {
   const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
   const todayStr = getLocalYYYYMMDD();
 
-  // Efficiency Check: Skip DB updates if we already ran the checker today
   if (profile?.last_streak_check_date === todayStr) return null;
 
   const stateUpdate = calculateStreakCheckUpdates(profile, todayStr);
@@ -119,8 +139,6 @@ export const runBackgroundStreakCheck = async (userId) => {
   return stateUpdate.result;
 };
 
-// 2. THE EARNER
-// Applies XP and focus minute additions to the user's profile, saving the new state to the DB
 export const processActivityXP = async (userId, xpToAdd, focusMinutesToAdd = 0) => {
   const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
   const todayStr = getLocalYYYYMMDD();

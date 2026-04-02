@@ -7,11 +7,20 @@ import { runBackgroundStreakCheck } from "../../lib/streakEngine";
 import { Icon, Icons } from "../ui/Icon";
 
 export default function DashboardLayout() {
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const { user } = useAuth();
+  // 🧠 FIX: Initialize state from localStorage!
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    return localStorage.getItem('sidebarCollapsed') === 'true';
+  });
   
-  // New state to hold streak penalty/freeze alerts
+  const { user } = useAuth();
   const [streakAlert, setStreakAlert] = useState(null);
+
+  // 🧠 FIX: Helper function to toggle and save to localStorage
+  const toggleCollapse = () => {
+    const newState = !isCollapsed;
+    setIsCollapsed(newState);
+    localStorage.setItem('sidebarCollapsed', newState);
+  };
 
   useEffect(() => {
     if (user) {
@@ -30,7 +39,9 @@ export default function DashboardLayout() {
 
   return (
     <div className="flex h-screen bg-[#0d0d14] overflow-hidden font-sans">
-      <Sidebar isCollapsed={isCollapsed} toggleCollapse={() => setIsCollapsed(!isCollapsed)} />
+      
+      {/* Pass the new toggle function down */}
+      <Sidebar isCollapsed={isCollapsed} toggleCollapse={toggleCollapse} />
       
       <div className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ease-in-out w-full pt-16 md:pt-0 ${isCollapsed ? "md:ml-20" : "md:ml-64"}`}>
         <Topbar />

@@ -459,7 +459,7 @@ export default function AIAssistant() {
               </button>
             </div>
             <div className="text-center text-[10px] font-bold text-white/30 mt-3 tracking-wide">
-              ⚡ Premium commands consume XP. Chat memory auto-clears every 24 hours.
+              ⚡ Premium commands consume XP.
             </div>
           </form>
         </div>

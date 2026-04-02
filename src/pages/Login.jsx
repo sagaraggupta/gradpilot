@@ -16,26 +16,39 @@ export default function Auth() {
     document.title = "User Login | GradPilot";
   }, []);
 
-  // Smart Redirect: Check if they are actually onboarded first!
+  // ─── 🛡️ SECURE SESSION CHECK (Bug 2 Fixed) ───
   useEffect(() => {
+    let isMounted = true;
+    
     const checkUser = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (data.session) {
-        // Ask the database if they have a name yet
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('full_name')
-          .eq('id', data.session.user.id)
-          .maybeSingle();
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        
+        if (data.session && isMounted) {
+          // Ask the database if they have a name yet
+          const { data: profile, error: profileErr } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', data.session.user.id)
+            .maybeSingle();
 
-        if (profile && profile.full_name) {
-          navigate('/dashboard'); // Old user -> Dashboard
-        } else {
-          navigate('/onboarding'); // New user -> Onboarding!
+          if (profileErr) throw profileErr;
+
+          if (profile && profile.full_name) {
+            navigate('/dashboard'); // Old user -> Dashboard
+          } else {
+            navigate('/onboarding'); // New user -> Onboarding!
+          }
         }
+      } catch (err) {
+        console.error("Session check failed:", err);
+        if (isMounted) setGlobalError("Failed to verify session. Please log in again.");
       }
     };
+    
     checkUser();
+    return () => { isMounted = false; };
   }, [navigate]);
 
   const handleMagicLink = async (e) => {

@@ -293,7 +293,7 @@ export default function Leaderboard() {
                     {renderAvatar(top3[1].full_name, top3[1].equipped_frame, "w-16 h-16", "text-xl", "border-4 border-slate-300 shadow-[0_0_20px_rgba(203,213,225,0.3)]")}
                   </div>
                   <div className="text-[14px] font-bold text-slate-200 mb-1 truncate max-w-[80px] text-center">{top3[1].full_name?.split(" ")[0]}</div>
-                  <div className="text-[12px] font-extrabold text-slate-400 mb-3">{(top3[1][xpKey] || 0).toLocaleString()} XP</div>
+                  <div className="text-[12px] font-extrabold text-slate-400 mb-3">{(top3[1][xpKey] || 0).toLocaleString()} PR</div>
                   <div className="w-24 md:w-32 h-32 bg-gradient-to-t from-slate-400/20 to-slate-400/5 border border-slate-400/20 rounded-t-2xl flex justify-center"><span className="text-slate-400/50 font-black text-4xl mt-4">2</span></div>
                 </div>
               )}
@@ -306,7 +306,7 @@ export default function Leaderboard() {
                     {renderAvatar(top3[0].full_name, top3[0].equipped_frame, "w-20 h-20", "text-2xl", "border-4 border-amber-400 shadow-[0_0_30px_rgba(251,191,36,0.4)]")}
                   </div>
                   <div className="text-[16px] font-black text-amber-400 mb-1 drop-shadow-md truncate max-w-[100px] text-center">{top3[0].full_name?.split(" ")[0]}</div>
-                  <div className="text-[13px] font-extrabold text-amber-200/70 mb-3">{(top3[0][xpKey] || 0).toLocaleString()} XP</div>
+                  <div className="text-[13px] font-extrabold text-amber-200/70 mb-3">{(top3[0][xpKey] || 0).toLocaleString()} PR</div>
                   <div className="w-28 md:w-36 h-40 bg-gradient-to-t from-amber-500/20 to-amber-500/5 border border-amber-500/30 rounded-t-2xl shadow-[0_0_30px_rgba(251,191,36,0.1)] flex justify-center"><span className="text-amber-500/40 font-black text-6xl mt-4">1</span></div>
                 </div>
               )}
@@ -319,7 +319,7 @@ export default function Leaderboard() {
                     {renderAvatar(top3[2].full_name, top3[2].equipped_frame, "w-16 h-16", "text-xl", "border-4 border-orange-700 shadow-[0_0_20px_rgba(194,65,12,0.3)]")}
                   </div>
                   <div className="text-[14px] font-bold text-slate-200 mb-1 truncate max-w-[80px] text-center">{top3[2].full_name?.split(" ")[0]}</div>
-                  <div className="text-[12px] font-extrabold text-orange-400 mb-3">{(top3[2][xpKey] || 0).toLocaleString()} XP</div>
+                  <div className="text-[12px] font-extrabold text-orange-400 mb-3">{(top3[2][xpKey] || 0).toLocaleString()} PR</div>
                   <div className="w-24 md:w-32 h-24 bg-gradient-to-t from-orange-700/20 to-orange-700/5 border border-orange-700/20 rounded-t-2xl flex justify-center"><span className="text-orange-700/50 font-black text-4xl mt-4">3</span></div>
                 </div>
               )}
@@ -365,7 +365,7 @@ export default function Leaderboard() {
                       </div>
 
                       <div className="col-span-4 md:col-span-3 font-extrabold text-[14px] text-slate-200 text-right md:text-left">
-                        {displayXp.toLocaleString()} <span className="text-[10px] text-amber-400 ml-1">XP</span>
+                        {displayXp.toLocaleString()} <span className="text-[10px] text-amber-400 ml-1">PR</span>
                       </div>
                       
                       <div className="col-span-3 hidden md:flex justify-end pr-4">

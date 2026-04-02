@@ -1,16 +1,15 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { Icon, Icons } from "../ui/Icon";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabase";
 
-// ─── REORGANIZED MENU CATEGORIES ───
 const MENU_CATEGORIES = [
   {
     title: "Main Menu",
     links: [
-      { name: "Dashboard", path: "/dashboard", icon: "home" }, // 🚀 CRITICAL FIX: Changed from "/" to "/dashboard"
-      { name: "Assignments", path: "/assignments", icon: "file" },
+      { name: "Dashboard", path: "/dashboard", icon: "home" }, 
+      { name: "Assignments", path: "/assignments", icon: "file", badgeKey: "tasks" }, // 👈 Added Badge Key
       { name: "Focus Timer", path: "/timer", icon: "clock" },
       { name: "Attendance", path: "/attendance", icon: "calendar" },
       { name: "Grades", path: "/grades", icon: "book" },
@@ -33,12 +32,31 @@ const MENU_CATEGORIES = [
 ];
 
 export default function Sidebar({ isCollapsed, toggleCollapse }) {
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [isMobileOpen, setIsMobileOpen] = useState(false); 
   
+  // 🔥 FEATURE #2: Dynamic Badges State
+  const [pendingTasks, setPendingTasks] = useState(0);
+
   const isDesktopCollapsed = isCollapsed;
-  const setIsDesktopCollapsed = toggleCollapse;
+
+  // ─── FETCH BADGE DATA ───
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    const fetchBadges = async () => {
+      const { count } = await supabase
+        .from('tasks')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .neq('status', 'completed');
+      
+      if (count !== null) setPendingTasks(count);
+    };
+
+    fetchBadges();
+  }, [user]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -47,7 +65,6 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
 
   return (
     <>
-      {/* ─── MOBILE HAMBURGER HEADER ─── */}
       <div className="md:hidden fixed top-0 left-0 w-full h-16 bg-[#0d0d14]/90 backdrop-blur-md border-b border-white/5 flex items-center justify-between px-5 z-[60]">
         <div className="flex items-center gap-2">
           <img src="/GradPilot.png" alt="GradPilot" className="h-8 w-auto object-contain" />
@@ -57,24 +74,21 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
         </button>
       </div>
 
-      {/* ─── MOBILE DARK OVERLAY ─── */}
       {isMobileOpen && (
         <div className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[40]" onClick={() => setIsMobileOpen(false)} />
       )}
 
-      {/* ─── THE ACTUAL SIDEBAR ─── */}
       <div className={`fixed inset-y-0 left-0 z-[50] bg-[#0d0d14] border-r border-white/5 flex flex-col transform transition-all duration-300 ease-in-out pt-16 md:pt-0 
         ${isMobileOpen ? "translate-x-0 w-64" : "-translate-x-full md:translate-x-0"} 
         ${isDesktopCollapsed ? "md:w-20" : "md:w-64"}
       `}>
         
-        {/* ─── DESKTOP LOGO & TOGGLE AREA ─── */}
         <div className="hidden md:flex h-20 items-center justify-between px-5 border-b border-white/5 shrink-0 overflow-hidden">
           <div className={`flex items-center transition-opacity duration-300 ${isDesktopCollapsed ? "opacity-0 w-0 hidden" : "opacity-100 w-auto"}`}>
             <img src="/GradPilot.png" alt="GradPilot" className="h-8 w-auto object-contain" />
           </div>
           <button 
-            onClick={() => setIsDesktopCollapsed(!isDesktopCollapsed)} 
+            onClick={() => toggleCollapse(!isDesktopCollapsed)} 
             className={`text-white/50 hover:text-indigo-400 transition-colors shrink-0 ${isDesktopCollapsed ? "mx-auto" : ""}`}
             title="Toggle Sidebar"
           >
@@ -82,18 +96,14 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
           </button>
         </div>
 
-        {/* ─── NAVIGATION ─── */}
         <div className="flex-1 overflow-y-auto py-6 px-4 flex flex-col gap-6 no-scrollbar overflow-x-hidden">
           
-          {/* DYNAMIC CATEGORY MAPPING */}
           {MENU_CATEGORIES.map((category) => (
             <div key={category.title} className="flex flex-col gap-1.5">
-              {/* Category Header */}
               <div className={`text-[10px] font-bold text-white/30 uppercase tracking-widest px-2 mb-1 transition-opacity duration-200 ${isDesktopCollapsed ? "opacity-0 hidden" : "opacity-100"}`}>
                 {category.title}
               </div>
               
-              {/* Category Links */}
               {category.links.map((link) => (
                 <NavLink 
                   key={link.name} 
@@ -101,7 +111,7 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
                   onClick={() => setIsMobileOpen(false)}
                   title={isDesktopCollapsed ? link.name : ""} 
                   className={({ isActive }) => `
-                    flex items-center gap-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-200 group whitespace-nowrap
+                    flex items-center gap-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-200 group whitespace-nowrap relative
                     ${isActive ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'text-white/50 hover:bg-white/5 hover:text-slate-200 border border-transparent'}
                     ${isDesktopCollapsed ? 'px-0 justify-center' : 'px-3'}
                   `}
@@ -110,8 +120,21 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
                     <>
                       <div className={`shrink-0 transition-colors ${isActive ? 'text-indigo-400' : 'text-white/40 group-hover:text-white/70'}`}>
                         <Icon d={Icons[link.icon] || Icons.star} size={18} />
+                        
+                        {/* COLLAPSED BADGE DOT */}
+                        {isDesktopCollapsed && link.badgeKey === "tasks" && pendingTasks > 0 && (
+                          <div className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border border-[#0d0d14]" />
+                        )}
                       </div>
+
                       <span className={`transition-opacity duration-200 ${isDesktopCollapsed ? "opacity-0 hidden" : "opacity-100"}`}>{link.name}</span>
+                      
+                      {/* EXPANDED BADGE */}
+                      {!isDesktopCollapsed && link.badgeKey === "tasks" && pendingTasks > 0 && (
+                        <div className="ml-auto bg-red-500/20 text-red-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-red-500/30">
+                          {pendingTasks}
+                        </div>
+                      )}
                     </>
                   )}
                 </NavLink>
@@ -119,7 +142,7 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
             </div>
           ))}
 
-          {/* ─── INTELLIGENCE SECTION (AI PRO) ─── */}
+          {/* AI ASSISTANT */}
           <div className="flex flex-col gap-1.5">
             <div className={`text-[10px] font-bold text-white/30 uppercase tracking-widest px-2 mb-1 transition-opacity duration-200 ${isDesktopCollapsed ? "opacity-0 hidden" : "opacity-100"}`}>
               Intelligence
@@ -156,7 +179,7 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
 
         </div>
 
-        {/* ─── LOGOUT FOOTER ─── */}
+        {/* LOGOUT */}
         <div className={`p-4 border-t border-white/5 shrink-0 transition-all ${isDesktopCollapsed ? "flex justify-center" : ""}`}>
           <button 
             onClick={handleLogout}

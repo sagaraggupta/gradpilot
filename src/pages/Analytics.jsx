@@ -273,8 +273,9 @@ export default function Analytics() {
                     </svg>
                     <span className="absolute text-[54px] font-extrabold text-white font-['Plus_Jakarta_Sans']">{analytics.masterScore}</span>
                   </div>
-                  <button onClick={() => setIsWeightsModalOpen(true)} className="mt-6 px-4 py-1.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 text-[10px] font-bold uppercase tracking-widest hover:bg-indigo-500/20 transition-colors z-10">
-                    ⚙️ Configure Weights
+                  <button onClick={() => setIsWeightsModalOpen(true)} className="mt-6 px-4 py-1.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 text-[10px] font-bold uppercase tracking-widest hover:bg-indigo-500/20 transition-colors z-10 flex items-center justify-center gap-2">
+                    <Icon d={Icons.settings} size={10} className="text-indigo-400" /> 
+                    <span>Configure Weights</span>
                   </button>
                 </div>
 

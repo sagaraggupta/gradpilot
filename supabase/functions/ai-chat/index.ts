@@ -8,13 +8,12 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Handle CORS Preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // 🔒 SECURITY GATE: Verify the user making this request is logged in!
+    // 🔒 SECURITY GATE: Verify Auth
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) throw new Error("Missing Authorization header.");
 
@@ -22,7 +21,6 @@ serve(async (req) => {
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
     const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-    // Decode the token and get the user
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
@@ -32,10 +30,18 @@ serve(async (req) => {
       });
     }
 
-    // 🟢 User is authenticated! Proceed with AI Generation.
     const { prompt } = await req.json()
     
-    // Pull both keys securely from the Supabase Vault
+    // 🛡️ COST CONTROL & SANITIZATION (Fix #2 & #5)
+    if (!prompt || typeof prompt !== 'string') {
+      return new Response(JSON.stringify({ error: 'Invalid prompt provided.' }), { status: 400, headers: corsHeaders });
+    }
+    if (prompt.length > 5000) {
+      return new Response(JSON.stringify({ error: 'Prompt exceeds 5,000 character limit.' }), { status: 400, headers: corsHeaders });
+    }
+    
+    // *Future Optimization: Insert rate limiting check against Supabase DB here*
+
     const geminiApiKey = Deno.env.get('GEMINI_API_KEY')
     const groqApiKey = Deno.env.get('GROQ_API_KEY')
 
@@ -64,7 +70,7 @@ serve(async (req) => {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: "llama-3.1-8b-instant", // Your fallback model
+          model: "llama-3.1-8b-instant",
           messages: [{ role: "user", content: prompt }]
         })
       });
@@ -77,7 +83,6 @@ serve(async (req) => {
       reply = groqData.choices[0].message.content;
     }
 
-    // Send the successful AI response back to React!
     return new Response(
       JSON.stringify({ reply }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
