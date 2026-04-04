@@ -13,18 +13,21 @@ serve(async (req) => {
   }
 
   try {
-    // 🔒 SECURITY GATE: Verify Auth
+    // 🔒 SECURITY GATE: Verify Auth explicitly with the token
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) throw new Error("Missing Authorization header.");
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    );
 
-    const token = authHeader.replace('Bearer ', '');
+    // Safely extract the token and explicitly pass it to getUser()
+    const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
+      console.error("Auth Verification Failed:", authError?.message);
       return new Response(JSON.stringify({ error: 'Unauthorized: Access Denied' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });

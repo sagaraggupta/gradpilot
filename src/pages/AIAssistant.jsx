@@ -318,9 +318,20 @@ export default function AIAssistant() {
         User Query: ${textToSend}`;
       }
 
-      // Secure Backend Inference
+      // 1. Verify the session is alive
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !session?.access_token) {
+        alert("Session expired or missing! Please sign out and sign back in.");
+        throw new Error("Missing active session.");
+      }
+
+      // 2. Call the AI securely
       const { data, error } = await supabase.functions.invoke('ai-chat', {
-        body: { prompt: finalPrompt }
+        body: { prompt: finalPrompt }, // ✅ FIX: Use finalPrompt
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
       });
 
       if (error) throw error;

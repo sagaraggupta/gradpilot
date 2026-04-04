@@ -24,7 +24,21 @@ export default function AIDailyCommander({ stats, userName, onStartDay }) {
         Sentence 2: Give a quick, punchy, encouraging command. 
         Keep it under 35 words total. No markdown.`;
 
-        const { data, error } = await supabase.functions.invoke('ai-chat', { body: { prompt } });
+        // 1. Force fetch the freshest session token right before making the call
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError || !session) {
+          throw new Error("You must be logged in to use the AI Assistant.");
+        }
+
+        // 2. Explicitly inject the Authorization header into the invoke call
+        const { data, error } = await supabase.functions.invoke('ai-chat', {
+          body: { prompt: prompt }, // Change 'prompt' to whatever your variable is named
+          headers: {
+            Authorization: `Bearer ${session.access_token}`
+          }
+        });
+
         if (error) throw error;
         
         setBriefing(data.reply);

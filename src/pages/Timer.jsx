@@ -69,6 +69,33 @@ export default function Timer() {
     }
   };
 
+  // 🎵 SPOTIFY AUTO-CONVERTER
+  const handleSpotifyUrlChange = (inputUrl) => {
+    if (!inputUrl) {
+      setSpotifyUrl("");
+      return;
+    }
+    
+    let finalUrl = inputUrl;
+    
+    // Auto-convert standard Spotify links to embed links
+    if (inputUrl.includes("open.spotify.com") && !inputUrl.includes("/embed/")) {
+      try {
+        const urlObj = new URL(inputUrl);
+        // Extracts the "/playlist/123" part and injects "/embed"
+        finalUrl = `https://open.spotify.com/embed${urlObj.pathname}?theme=0`;
+      } catch (e) {
+        console.warn("Invalid URL format");
+      }
+    } 
+    // If they DID paste an embed link, force the dark mode theme!
+    else if (inputUrl.includes("/embed/") && !inputUrl.includes("theme=0")) {
+      finalUrl = inputUrl.includes("?") ? `${inputUrl}&theme=0` : `${inputUrl}?theme=0`;
+    }
+    
+    setSpotifyUrl(finalUrl);
+  };
+
   // Sync React state if the user presses the 'Esc' key to exit
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -102,8 +129,19 @@ export default function Timer() {
         const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
         if (profileData) {
           setProfile(profileData);
-          setFocusMinutes(profileData.focus_minutes_today || 0);
-          setSessionsToday(profileData.sessions_today || 0); 
+          
+          // 🛠️ THE FIX: Define the local date string so the app knows what "today" is
+          const d = new Date();
+          const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          
+          if (profileData.last_active_date === todayStr) {
+            setFocusMinutes(profileData.focus_minutes_today || 0);
+            setSessionsToday(profileData.sessions_today || 0); 
+          } else {
+            // It's a new day! Override the stale database data with 0 in the UI.
+            setFocusMinutes(0);
+            setSessionsToday(0);
+          }
         }
 
         // 2. Fetch History for Analytics
@@ -366,7 +404,8 @@ export default function Timer() {
         running={running}
         toggleTimer={toggleTimer}
         spotifyUrl={spotifyUrl}
-        setSpotifyUrl={setSpotifyUrl}
+        // setSpotifyUrl={setSpotifyUrl}
+        setSpotifyUrl={handleSpotifyUrlChange}
       />
 
       <div className="text-center">

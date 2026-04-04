@@ -18,7 +18,7 @@ export function CategoryPieChart({ categoryTotals, CATEGORY_CONFIG }) {
 
   return (
     <div className="flex flex-col items-center">
-      <div className="h-[220px] w-full">
+      <div className="w-full h-64 min-h-[250px]">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie data={data} innerRadius={65} outerRadius={85} paddingAngle={6} dataKey="value" stroke="none">

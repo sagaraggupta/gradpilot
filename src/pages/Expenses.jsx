@@ -35,6 +35,8 @@ export default function Expenses() {
   const [newBudgetInput, setNewBudgetInput] = useState("");
   const [errors, setErrors] = useState({});
 
+  const [currentPage, setCurrentPage] = useState(1);
+
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 

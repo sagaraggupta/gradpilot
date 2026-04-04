@@ -3,6 +3,7 @@ import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { Icon, Icons } from "../components/ui/Icon";
 import { motion } from "framer-motion";
+import { supabase } from "../lib/supabase";
 
 // ─── 📊 ANALYTICS TRACKER (Mock implementation for Feature #8) ───
 const trackEvent = (eventName, data = {}) => {
@@ -87,6 +88,38 @@ export default function Landing() {
 
   // STATE FOR YOUTUBE MODAL
   const [isVideoOpen, setIsVideoOpen] = useState(false);
+
+  // NEWSLETTER STATE
+  const [email, setEmail] = useState("");
+  const [newsletterStatus, setNewsletterStatus] = useState("idle"); // 'idle', 'loading', 'success', 'error'
+
+  const handleNewsletterSubmit = async (e) => {
+    e.preventDefault();
+    if (!email) return;
+    
+    setNewsletterStatus("loading");
+    trackEvent('newsletter_subscribed');
+
+    const { error } = await supabase
+      .from('newsletter_subscribers')
+      .insert([{ email }]);
+
+    if (error) {
+      // Code 23505 means it violates the UNIQUE constraint (they are already subscribed)
+      if (error.code === '23505') {
+        setNewsletterStatus("success"); // Treat as success so they don't worry
+      } else {
+        setNewsletterStatus("error");
+        console.error("Newsletter error:", error);
+      }
+    } else {
+      setNewsletterStatus("success");
+      setEmail(""); // Clear the input
+    }
+
+    // Reset status after 3 seconds
+    setTimeout(() => setNewsletterStatus("idle"), 3000);
+  };
 
   // ─── 🔍 SEO & META TAGS INJECTION (Feature #5 Fix) ───
   useEffect(() => {
@@ -389,9 +422,14 @@ export default function Landing() {
           <div>
             <h4 className="text-white font-bold mb-4 text-[15px]">Support</h4>
             <ul className="space-y-3 text-[13px] text-white/50">
-              <li><a href="#" className="hover:text-indigo-400 transition-colors">Help Center</a></li>
-              <li><a href="#" className="hover:text-indigo-400 transition-colors">Contact Us</a></li>
-              <li><a href="#" className="hover:text-indigo-400 transition-colors">Submit Feedback</a></li>
+              {/* Idea: Link to a public Notion page you can easily edit without deploying code! */}
+              <li><a href="https://notion.so/" target="_blank" rel="noreferrer" className="hover:text-indigo-400 transition-colors">Help Center</a></li>
+              
+              {/* Idea: Opens their default email app pre-filled with the subject line! */}
+              <li><a href="mailto:support@gradpilot.com?subject=Contact Us" className="hover:text-indigo-400 transition-colors">Contact Us</a></li>
+              
+              {/* Idea: Send feedback to a different email (or link to a free Google Form/Typeform) */}
+              <li><a href="mailto:feedback@gradpilot.com?subject=Product Feedback" className="hover:text-indigo-400 transition-colors">Submit Feedback</a></li>
             </ul>
           </div>
 
@@ -399,9 +437,30 @@ export default function Landing() {
           <div>
             <h4 className="text-white font-bold mb-4 text-[15px]">Join the Newsletter</h4>
             <p className="text-[12px] text-white/40 mb-3">Get study tips and product updates.</p>
-            <form className="flex" onSubmit={(e) => { e.preventDefault(); trackEvent('newsletter_subscribed'); }}>
-              <input type="email" placeholder="student@university.edu" required aria-label="Email address" className="bg-white/5 border border-white/10 rounded-l-lg px-3 py-2 text-[12px] outline-none text-white w-full focus:border-indigo-500" />
-              <button type="submit" className="bg-indigo-500 text-white font-bold px-3 py-2 rounded-r-lg text-[12px] hover:bg-indigo-400 transition-colors">Join</button>
+            
+            <form className="flex flex-col gap-2" onSubmit={handleNewsletterSubmit}>
+              <div className="flex">
+                <input 
+                  type="email" 
+                  placeholder="student@university.edu" 
+                  required 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={newsletterStatus === "loading" || newsletterStatus === "success"}
+                  className="bg-white/5 border border-white/10 rounded-l-lg px-3 py-2 text-[12px] outline-none text-white w-full focus:border-indigo-500 disabled:opacity-50" 
+                />
+                <button 
+                  type="submit" 
+                  disabled={newsletterStatus === "loading" || newsletterStatus === "success"}
+                  className="bg-indigo-500 text-white font-bold px-3 py-2 rounded-r-lg text-[12px] hover:bg-indigo-400 transition-colors disabled:opacity-50 flex items-center justify-center min-w-[60px]"
+                >
+                  {newsletterStatus === "loading" ? "..." : newsletterStatus === "success" ? "✓" : "Join"}
+                </button>
+              </div>
+              
+              {/* Status Messages */}
+              {newsletterStatus === "success" && <span className="text-[10px] text-emerald-400 font-bold animate-[fadeIn_0.2s_ease-out]">Welcome to the squad! 🚀</span>}
+              {newsletterStatus === "error" && <span className="text-[10px] text-red-400 font-bold animate-[fadeIn_0.2s_ease-out]">Something went wrong. Try again.</span>}
             </form>
           </div>
 
