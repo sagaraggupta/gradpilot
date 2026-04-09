@@ -1,14 +1,28 @@
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 
-export default function AIHabitCoach({ habits, habitsDoneToday }) {
+// 🚀 Added user, profile, setProfile to props
+export default function AIHabitCoach({ user, profile, setProfile, habits, habitsDoneToday }) {
   const [aiResponse, setAiResponse] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const COACH_COST = 15;
 
   const getAdvice = async () => {
     if (habits.length === 0) return;
+    
+    // 1. Check Wallet Balance
+    if (!profile || (profile.credits_balance || 0) < COACH_COST) {
+      alert(`You need ${COACH_COST} 🪙 Credits to use the AI Coach.`);
+      return;
+    }
+
     setIsAnalyzing(true);
     
+    // 2. Optimistically deduct credits
+    const newBalance = profile.credits_balance - COACH_COST;
+    setProfile({ ...profile, credits_balance: newBalance });
+    await supabase.from('profiles').update({ credits_balance: newBalance }).eq('id', user.id);
+
     try {
       // Create a clean summary of their habits to feed to the AI
       const habitSummary = habits.map(h => `${h.name} (Streak: ${h.streak} days)`).join(', ');
@@ -26,7 +40,11 @@ export default function AIHabitCoach({ habits, habitsDoneToday }) {
       setAiResponse(data.reply);
     } catch (error) {
       console.error("AI Coach Error:", error);
-      setAiResponse("The AI Coach is currently meditating. Please try again later.");
+      // 3. Refund if the AI crashes!
+      const refundBalance = (profile?.credits_balance || 0) + COACH_COST;
+      setProfile({ ...profile, credits_balance: refundBalance });
+      await supabase.from('profiles').update({ credits_balance: refundBalance }).eq('id', user.id);
+      setAiResponse("⚠️ The AI Coach is currently meditating. Your credits have been refunded.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -48,8 +66,8 @@ export default function AIHabitCoach({ habits, habitsDoneToday }) {
       </div>
       
       {!aiResponse && !isAnalyzing && (
-        <button onClick={getAdvice} className="w-full py-3 rounded-xl bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 text-[12px] font-bold transition-all shadow-sm">
-          ✨ Analyze My Patterns
+        <button onClick={getAdvice} className="w-full py-3 rounded-xl bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/20 text-[12px] font-bold transition-all shadow-sm flex items-center justify-center gap-2 group">
+          ✨ Analyze My Patterns <span className="bg-indigo-500/20 px-1.5 py-0.5 rounded text-[10px] text-amber-400 group-hover:bg-indigo-500/30 transition-colors">-{COACH_COST} 🪙</span>
         </button>
       )}
       

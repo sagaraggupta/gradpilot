@@ -9,7 +9,7 @@ const MENU_CATEGORIES = [
     title: "Main Menu",
     links: [
       { name: "Dashboard", path: "/dashboard", icon: "home" }, 
-      { name: "Assignments", path: "/assignments", icon: "file", badgeKey: "tasks" }, // 👈 Added Badge Key
+      { name: "Assignments", path: "/assignments", icon: "file", badgeKey: "tasks" },
       { name: "Focus Timer", path: "/timer", icon: "clock" },
       { name: "Attendance", path: "/attendance", icon: "calendar" },
       { name: "Grades", path: "/grades", icon: "book" },
@@ -19,7 +19,7 @@ const MENU_CATEGORIES = [
     title: "Progress",
     links: [
       { name: "Analytics", path: "/analytics", icon: "chart" },
-      { name: "Goals & XP", path: "/goals", icon: "star" },
+      { name: "Goals & Rewards", path: "/goals", icon: "star" }, // 🪙 Updated for v2.0 Lore!
       { name: "Leaderboard", path: "/leaderboard", icon: "trophy" },
     ]
   },
@@ -36,15 +36,14 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
   const navigate = useNavigate();
   const [isMobileOpen, setIsMobileOpen] = useState(false); 
   
-  // 🔥 FEATURE #2: Dynamic Badges State
   const [pendingTasks, setPendingTasks] = useState(0);
-
   const isDesktopCollapsed = isCollapsed;
 
-  // ─── FETCH BADGE DATA ───
+  // ─── 🚀 REAL-TIME BADGE ENGINE ───
   useEffect(() => {
     if (!user?.id) return;
     
+    // Function to fetch the exact count
     const fetchBadges = async () => {
       const { count } = await supabase
         .from('tasks')
@@ -55,7 +54,24 @@ export default function Sidebar({ isCollapsed, toggleCollapse }) {
       if (count !== null) setPendingTasks(count);
     };
 
+    // 1. Fetch immediately on load
     fetchBadges();
+
+    // 2. Subscribe to live database changes! 
+    // If a task is added, edited, or checked off, it instantly recalculates the badge.
+    const taskSubscription = supabase
+      .channel('sidebar-task-badges')
+      .on(
+        'postgres_changes', 
+        { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${user.id}` }, 
+        () => { fetchBadges(); }
+      )
+      .subscribe();
+
+    // Cleanup subscription when the user leaves
+    return () => {
+      supabase.removeChannel(taskSubscription);
+    };
   }, [user]);
 
   const handleLogout = async () => {

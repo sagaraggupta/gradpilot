@@ -6,18 +6,24 @@ export default function usePWAInstaller() {
 
   useEffect(() => {
     // 1. Check if they are already running the app in Standalone (installed) mode
-    if (window.matchMedia('(display-mode: standalone)').matches) {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    
+    // 2. 🧠 SMART DETECTION: Check if they previously dismissed the banner
+    const hasDismissed = localStorage.getItem('hide_install_banner') === 'true';
+
+    // If it's installed OR they dismissed it before, abort and stay hidden!
+    if (isStandalone || hasDismissed) {
       return; 
     }
 
-    // 2. Intercept the browser's default install prompt
+    // 3. Intercept the browser's default install prompt
     const handleBeforeInstallPrompt = (e) => {
-      e.preventDefault(); // Stop Chrome from showing its ugly default bar
-      setDeferredPrompt(e); // Save the event so we can trigger it later
-      setIsInstallable(true); // Tell our React UI to show the custom banner
+      e.preventDefault(); 
+      setDeferredPrompt(e); 
+      setIsInstallable(true); 
     };
 
-    // 3. Listen for when the installation actually finishes
+    // 4. Listen for when the installation actually finishes
     const handleAppInstalled = () => {
       setIsInstallable(false);
       setDeferredPrompt(null);
@@ -33,25 +39,24 @@ export default function usePWAInstaller() {
     };
   }, []);
 
-  // 4. The function our custom button will call to trigger the real install
   const installApp = async () => {
     if (!deferredPrompt) return;
     
-    // Show the native prompt
     deferredPrompt.prompt();
-    
-    // Wait for the user to click "Install" or "Cancel"
     const { outcome } = await deferredPrompt.userChoice;
     
     if (outcome === 'accepted') {
       setIsInstallable(false);
     }
     
-    // We can only use the prompt once, so clear it out
     setDeferredPrompt(null);
   };
 
-  const dismiss = () => setIsInstallable(false);
+  // 🧠 THE FIX: Save their choice to the browser's memory!
+  const dismiss = () => {
+    setIsInstallable(false);
+    localStorage.setItem('hide_install_banner', 'true');
+  };
 
   return { isInstallable, installApp, dismiss };
 }

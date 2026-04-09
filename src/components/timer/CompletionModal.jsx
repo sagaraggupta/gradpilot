@@ -47,9 +47,9 @@ export default function CompletionModal({
         ) : (
           <button 
             onClick={() => submitSession(false)} 
-            className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 text-white font-bold text-[14px] hover:opacity-90 transition-opacity"
+            className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 text-white font-bold text-[14px] shadow-lg shadow-indigo-500/20 hover:opacity-90 hover:scale-[1.02] active:scale-95 transition-all"
           >
-            Save & Take a Break (+20 XP)
+            Save & Collect Credits 🪙
           </button>
         )}
 

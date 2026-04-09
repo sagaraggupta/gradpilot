@@ -214,34 +214,40 @@ export default function Assignments() {
     const statusFlow = { "pending": "in-progress", "in-progress": "completed", "completed": "pending" };
     const progressMap = { "pending": 0, "in-progress": 50, "completed": 100 };
     const newStatus = statusFlow[task.status] || "pending";
-    updateTaskStatusInDB(task.id, newStatus, progressMap[newStatus], task.status);
+    updateTaskStatusInDB(task, newStatus, progressMap[newStatus]);
   };
 
-  const updateTaskStatusInDB = async (id, status, progress, oldStatus) => {
+  const updateTaskStatusInDB = async (task, status, progress) => {
     const completedAt = status === "completed" ? new Date().toISOString() : null;
-    setAssignments(prev => prev.map(a => a.id === id ? { ...a, status, progress, completed_at: completedAt } : a));
-    await supabase.from('tasks').update({ status, progress, completed_at: completedAt }).eq('id', id);
+    const oldStatus = task.status;
+    
+    setAssignments(prev => prev.map(a => a.id === task.id ? { ...a, status, progress, completed_at: completedAt } : a));
+    await supabase.from('tasks').update({ status, progress, completed_at: completedAt }).eq('id', task.id);
 
     if (status === "completed" && oldStatus !== "completed") {
-      const res = await processActivityXP(user.id, 50, 0); 
-      if (res?.streakExtendedToday) showToast(`Task completed! +50 XP & Streak Extended to ${res.newStreak} days! 🔥`);
-      else showToast("Task completed! +50 XP 🚀");
+      // 🪙 Dynamic Rewards based on Priority
+      const rewardMap = { low: 15, medium: 30, high: 50 };
+      const earnedCredits = rewardMap[task.priority] || 30;
+
+      const res = await processActivityXP(user.id, earnedCredits, 0); 
+      if (res?.streakExtendedToday) showToast(`Task completed! +${earnedCredits} 🪙 & Streak Extended! 🔥`);
+      else showToast(`Task completed! +${earnedCredits} 🪙 🚀`);
     } else {
       showToast(`Task moved to ${formatText(status)}`);
     }
   };
 
   const handleDragStart = (e, taskId) => { e.dataTransfer.setData("taskId", taskId); };
+
   const handleDrop = (e, newStatus) => {
     e.preventDefault();
     const taskId = e.dataTransfer.getData("taskId");
     
-    // 🐛 Bug 4 Fix: Safe type conversion/comparison for IDs
     const task = assignments.find(a => String(a.id) === String(taskId));
     if (!task) return;
     
     const progressMap = { "pending": 0, "in-progress": 50, "completed": 100, "overdue": 0 };
-    updateTaskStatusInDB(task.id, newStatus, progressMap[newStatus], task.status);
+    updateTaskStatusInDB(task, newStatus, progressMap[newStatus]);
   };
 
   const addToGoogleCalendar = (task) => {
@@ -279,7 +285,18 @@ export default function Assignments() {
     setIsFlashcardModalOpen(true);
   };
 
-  const generateStudyMaterial = async (mode) => {
+  const generateStudyMaterial = async (mode, cost) => {
+    // 1. Fetch current profile to check bank balance!
+    const { data: profile } = await supabase.from('profiles').select('credits_balance').eq('id', user.id).single();
+    
+    if (!profile || (profile.credits_balance || 0) < cost) {
+      return showToast(`Not enough Credits! You need ${cost} 🪙 to unlock this AI feature.`, "error");
+    }
+
+    // 2. Optimistically deduct credits for snappy UI
+    const newBalance = profile.credits_balance - cost;
+    await supabase.from('profiles').update({ credits_balance: newBalance }).eq('id', user.id);
+
     setStudyMode(mode);
     setIsGenerating(true);
     setStudyData(null);
@@ -305,7 +322,9 @@ export default function Assignments() {
 
     } catch (err) {
       console.error("AI Generation Failed:", err);
-      showToast("AI core failed to generate material. Please try again.", "error");
+      // 3. Refund the credits if the AI crashes!
+      await supabase.from('profiles').update({ credits_balance: profile.credits_balance }).eq('id', user.id);
+      showToast("AI core failed. Your credits have been refunded.", "error");
       setStudyMode(null);
     } finally {
       setIsGenerating(false);
@@ -315,7 +334,7 @@ export default function Assignments() {
   const completeStudySession = async () => {
     setIsFlashcardModalOpen(false);
     const res = await processActivityXP(user.id, 40, 0); 
-    showToast(`Study Session Complete! +40 XP ${res?.streakExtendedToday ? "🔥 Streak Extended!" : "🚀"}`);
+    showToast(`Study Session Complete! +40 🪙 ${res?.streakExtendedToday ? "🔥 Streak Extended!" : "🚀"}`);
   };
 
   // ─── BULK ACTION LOGIC ───
@@ -350,9 +369,16 @@ export default function Assignments() {
       setAssignments(prevAssignments);
       showToast("Bulk complete failed. Try again.", "error");
     } else {
-      const xpGained = selectedTasks.length * 50;
-      await processActivityXP(user.id, xpGained, 0);
-      showToast(`${selectedTasks.length} tasks completed! +${xpGained} XP 🔥`, "success");
+      // 🪙 Calculate dynamic bulk reward
+      const rewardMap = { low: 15, medium: 30, high: 50 };
+      let creditsGained = 0;
+      selectedTasks.forEach(id => {
+        const task = prevAssignments.find(t => t.id === id);
+        creditsGained += rewardMap[task?.priority] || 30;
+      });
+
+      await processActivityXP(user.id, creditsGained, 0);
+      showToast(`${selectedTasks.length} tasks completed! +${creditsGained} 🪙 🔥`, "success");
     }
   };
 

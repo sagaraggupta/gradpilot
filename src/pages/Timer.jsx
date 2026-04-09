@@ -48,7 +48,6 @@ export default function Timer() {
     return localStorage.getItem('gradpilot_spotify') || ""; 
   });
 
-  // Auto-save the playlist URL whenever the user changes it
   useEffect(() => {
     localStorage.setItem('gradpilot_spotify', spotifyUrl);
   }, [spotifyUrl]); 
@@ -78,17 +77,14 @@ export default function Timer() {
     
     let finalUrl = inputUrl;
     
-    // Auto-convert standard Spotify links to embed links
     if (inputUrl.includes("open.spotify.com") && !inputUrl.includes("/embed/")) {
       try {
         const urlObj = new URL(inputUrl);
-        // Extracts the "/playlist/123" part and injects "/embed"
-        finalUrl = `https://open.spotify.com/embed${urlObj.pathname}?theme=0`;
+        finalUrl = `https://open.spotify.com/embed$${urlObj.pathname}?theme=0`;
       } catch (e) {
         console.warn("Invalid URL format");
       }
     } 
-    // If they DID paste an embed link, force the dark mode theme!
     else if (inputUrl.includes("/embed/") && !inputUrl.includes("theme=0")) {
       finalUrl = inputUrl.includes("?") ? `${inputUrl}&theme=0` : `${inputUrl}?theme=0`;
     }
@@ -96,7 +92,6 @@ export default function Timer() {
     setSpotifyUrl(finalUrl);
   };
 
-  // Sync React state if the user presses the 'Esc' key to exit
   useEffect(() => {
     const handleFullscreenChange = () => {
       if (!document.fullscreenElement) setIsZenMode(false);
@@ -122,15 +117,12 @@ export default function Timer() {
 
     const fetchData = async () => {
       try {
-        // 1. Fetch Tasks & Profile
         const { data: tasksData } = await supabase.from('tasks').select('*').eq('user_id', user.id).eq('status', 'pending');
         if (tasksData) setPendingTasks(tasksData);
 
         const { data: profileData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
         if (profileData) {
           setProfile(profileData);
-          
-          // 🛠️ THE FIX: Define the local date string so the app knows what "today" is
           const d = new Date();
           const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
           
@@ -138,33 +130,26 @@ export default function Timer() {
             setFocusMinutes(profileData.focus_minutes_today || 0);
             setSessionsToday(profileData.sessions_today || 0); 
           } else {
-            // It's a new day! Override the stale database data with 0 in the UI.
             setFocusMinutes(0);
             setSessionsToday(0);
           }
         }
 
-        // 2. Fetch History for Analytics
         const { data: historyData } = await supabase.from('study_sessions').select('duration_minutes, mood').eq('user_id', user.id);
         if (historyData) setStudyHistory(historyData);
 
-        // 3. 🛜 OFFLINE SYNC CHECK
         const offlineSessions = JSON.parse(localStorage.getItem('gradpilot_offline_sessions') || "[]");
         if (offlineSessions.length > 0 && navigator.onLine) {
-          console.log("Syncing offline sessions to cloud...");
           await supabase.from('study_sessions').insert(offlineSessions);
           localStorage.removeItem('gradpilot_offline_sessions');
           showToastMessage(`Synced ${offlineSessions.length} offline sessions to the cloud! ☁️`);
         }
-
       } catch (err) {
         console.error("Critical fetch failure:", err);
       }
     };
     
     fetchData();
-    
-    // Listen for internet returning
     window.addEventListener('online', fetchData);
     return () => window.removeEventListener('online', fetchData);
   }, [user]);
@@ -174,31 +159,31 @@ export default function Timer() {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // ─── 🛡️ BULLETPROOF INTERVAL & EXIT BLOCKER (Bugs 4, 5 & Improvement 8) ───
+  // ─── 🛡️ BULLETPROOF INTERVAL FOR BACKGROUND TABS ───
   useEffect(() => {
     let interval = null;
     
-    // 🐛 Bug 4 Fix: Guard clause to prevent duplicate/ghost intervals
     if (!running || !targetTime) return;
 
     interval = setInterval(() => {
+      // Calculate exact real-world time remaining
       const remaining = Math.round((targetTime - Date.now()) / 1000);
       
       if (remaining <= 0) {
         setSeconds(0);
         handleSessionComplete(); 
+        clearInterval(interval); // Explicitly clear it as soon as we hit 0
       } else {
         setSeconds(remaining);
       }
     }, 1000);
 
-    // 🐛 Bug 5 Fix: Strict cleanup on unmount or state change
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [running, targetTime]);
+  }, [running, targetTime]); // Safely depends on running and targetTime
 
-  // 🚀 Improvement 8: Prevent Accidental Tab Closing
+  // Prevent Accidental Tab Closing
   useEffect(() => {
     const handleBeforeUnload = (e) => {
       if (running) {
@@ -219,10 +204,10 @@ export default function Timer() {
       setRunning(false);
       setTargetTime(null);
     } else {
-      // 🐛 Bug 2 Fix: Safely check if Notifications exist in the browser
       if ("Notification" in window && Notification.permission === "default") {
         Notification.requestPermission().catch(e => console.warn("Notifications blocked."));
       }
+      // Set target time based on CURRENT state of seconds
       setTargetTime(Date.now() + (seconds * 1000));
       setRunning(true);
     }
@@ -251,7 +236,7 @@ export default function Timer() {
     setRunning(false);
     setTargetTime(null);
 
-    // 🐛 Bug 3 Fix: Graceful audio fallback
+    // Audio chime
     try {
       const chime = new Audio('/chime.mp3'); 
       await chime.play();
@@ -259,12 +244,14 @@ export default function Timer() {
       console.warn("Browser blocked auto-play audio."); 
     }
 
-    // 🐛 Bug 2 Fix: Safe Notification Trigger
+    // 🚀 FOREGROUND NOTIFICATION OVERRIDE
+    // This triggers even if the tab is heavily throttled in the background
     if ("Notification" in window && Notification.permission === "granted") {
       try {
-        new Notification(mode === "pomodoro" || mode === "deepWork" ? "Focus Session Complete!" : "Break is over!", {
-          body: mode === "pomodoro" || mode === "deepWork" ? "Great job! Click here to log your session." : "Time to get back to work!",
-          icon: "/pwa-192x192.png"
+        new Notification(mode === "pomodoro" || mode === "deepWork" ? "Focus Session Complete! 🛬" : "Break is over! 🚀", {
+          body: mode === "pomodoro" || mode === "deepWork" ? "Great job! Click here to log your session and claim your Credits." : "Time to get back to work!",
+          icon: "/GradPilot.png",
+          requireInteraction: true // Forces it to stay on screen
         });
       } catch (e) {
         console.warn("Notification failed to fire.");
@@ -279,6 +266,7 @@ export default function Timer() {
     }
   };
 
+  // ... (submitSession remains exactly the same) ...
   const submitSession = async (isTaskCompleted) => {
     if (!sessionMood) {
       alert("Please select how you felt during the session!");
@@ -289,47 +277,50 @@ export default function Timer() {
       const activeTask = pendingTasks.find(t => t.id === selectedTaskId);
       const subjectToLog = activeTask ? activeTask.subject : "General";
 
-      // 1. Save Session (🐛 Bug 6 Fix: Strict Error Catching)
       const { error: sessionError } = await supabase.from('study_sessions').insert([{
         user_id: user.id, task_id: selectedTaskId || null, subject: subjectToLog, duration_minutes: configs[mode], mood: sessionMood
       }]);
       
-      if (sessionError) throw sessionError; // This will trigger the catch block below!
+      if (sessionError) throw sessionError;
 
-      // 2. Process Standard XP
-      const res = await processActivityXP(user.id, 20, configs[mode]);
-      let finalToastMessage = res?.streakExtendedToday ? `+20 XP! Streak extended to ${res.newStreak} days! 🔥` : "+20 XP for focusing!";
-      
+      let earnedCredits = Math.max(1, configs[mode]);
+      let isTaskBonusApplied = false;
+
       if (isTaskCompleted && selectedTaskId) {
         await supabase.from('tasks').update({ status: 'completed', progress: 100, completed_at: new Date().toISOString() }).eq('id', selectedTaskId);
-        const taskRes = await processActivityXP(user.id, 50, 0); 
-        setProfile({ ...profile, total_xp: taskRes.newXp, current_streak: taskRes.newStreak, focus_minutes_today: res.newFocus, sessions_today: res.newSessions });
-        setPendingTasks(prev => prev.filter(t => t.id !== selectedTaskId));
-        setSelectedTaskId("");
-        finalToastMessage = "Task completed! +70 XP Total 🎯";
-      } else {
-        setProfile({ ...profile, total_xp: res.newXp, current_streak: res.newStreak, focus_minutes_today: res.newFocus, sessions_today: res.newSessions });
+        earnedCredits += 50; 
+        isTaskBonusApplied = true;
       }
 
-      setFocusMinutes(res.newFocus);
-      setSessionsToday(res.newSessions);
+      const res = await processActivityXP(user.id, earnedCredits, configs[mode]);
+      
+      let finalToastMessage = res?.streakExtendedToday ? `+${earnedCredits} 🪙! Streak extended to ${res.newStreak} days! 🔥` : `+${earnedCredits} 🪙 for focusing!`;
+      
+      if (isTaskBonusApplied) {
+        setPendingTasks(prev => prev.filter(t => t.id !== selectedTaskId));
+        setSelectedTaskId("");
+        finalToastMessage = `Task completed! +${earnedCredits} 🪙 Total 🎯`;
+      }
 
-      // 🚀 MAGIC 4: AUTO-VERIFY DAILY QUESTS!
+      if (res) {
+        setProfile({ ...profile, credits_balance: res.newCredits, pilot_score: res.newScore, current_streak: res.newStreak, focus_minutes_today: res.newFocus, sessions_today: res.newSessions });
+        setFocusMinutes(res.newFocus);
+        setSessionsToday(res.newSessions);
+      }
+
       const todayStr = new Date().toISOString().split('T')[0];
       
-      // Check for Pomodoro Quest (If they hit 2 sessions today)
-      if (res.newSessions >= 2) {
+      if (res && res.newSessions >= 2) {
         const { data: pomoQuest } = await supabase.from('daily_quests').select('*')
           .eq('user_id', user.id).eq('assigned_date', todayStr).eq('title', 'Complete 2 Pomodoro Sessions').eq('is_completed', false).maybeSingle();
           
         if (pomoQuest) {
           await supabase.from('daily_quests').update({ is_completed: true }).eq('id', pomoQuest.id);
-          finalToastMessage = `Quest Complete! +${pomoQuest.xp_reward + 20} XP 🎉`;
+          finalToastMessage = `Quest Complete! +${(pomoQuest.credits_reward || 0) + earnedCredits} 🪙 🎉`;
         }
       }
 
-      // Check for Streak Quest (If they hit a 3-day streak)
-      if (res.newStreak >= 3) {
+      if (res && res.newStreak >= 3) {
         const { data: streakQuest } = await supabase.from('daily_quests').select('*')
           .eq('user_id', user.id).eq('assigned_date', todayStr).eq('title', 'Achieve a 3-day focus streak').eq('is_completed', false).maybeSingle();
           
@@ -341,7 +332,6 @@ export default function Timer() {
       showToastMessage(finalToastMessage);
       setShowCompletionModal(false);
       
-      // 🚀 SMART MODE ROUTING & BREAK TIPS
       setCurrentTip(breakTips[Math.floor(Math.random() * breakTips.length)]);
       
       if (mode === "pomodoro") {
@@ -354,13 +344,12 @@ export default function Timer() {
           switchMode("shortBreak");
         }
       } else if (mode === "deepWork") {
-        switchMode("longBreak"); // Deep work always gets a long recovery
+        switchMode("longBreak"); 
       } 
       
     } catch (error) {
       console.error("Failed to save session to cloud:", error);
       
-      // 🛜 THE OFFLINE FALLBACK ENGINE
       if (!navigator.onLine || error.message === "Failed to fetch") {
         const offlineSession = {
           user_id: user.id, task_id: selectedTaskId || null, subject: subjectToLog, 
@@ -383,6 +372,8 @@ export default function Timer() {
     setIsEditingTime(false);
     const mins = Math.max(1, parseInt(newMinutes) || configs[mode]);
     setConfigs(prev => ({ ...prev, [mode]: mins }));
+    // Immediately update the seconds display so it doesn't jump
+    setSeconds(mins * 60); 
   };
 
   const mins = String(Math.floor(seconds / 60)).padStart(2, "0");
@@ -395,7 +386,6 @@ export default function Timer() {
 
   return (
     <div className="flex flex-col gap-6 items-center pb-10 relative">
-      {/* 🧘‍♂️ MODULAR ZEN MODE */}
       <ZenModeOverlay 
         isZenMode={isZenMode}
         toggleZenMode={toggleZenMode}
@@ -404,13 +394,12 @@ export default function Timer() {
         running={running}
         toggleTimer={toggleTimer}
         spotifyUrl={spotifyUrl}
-        // setSpotifyUrl={setSpotifyUrl}
         setSpotifyUrl={handleSpotifyUrlChange}
       />
 
       <div className="text-center">
         <h2 className="text-slate-100 font-bold text-[22px] font-['Plus_Jakarta_Sans']">Focus Timer</h2>
-        <p className="text-white/40 text-[13px] mt-1">Stay in the zone. Earn XP.</p>
+        <p className="text-white/40 text-[13px] mt-1">Stay in the zone. Earn Credits.</p>
       </div>
 
       <div className="flex flex-wrap justify-center gap-2">
@@ -421,7 +410,6 @@ export default function Timer() {
         ))}
       </div>
 
-      {/* 🚀 HEALTHY BREAK SUGGESTION */}
       {(mode === "shortBreak" || mode === "longBreak") && !running && (
         <div className="mt-2 px-4 py-2 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[12px] font-bold animate-[fadeIn_0.5s_ease-out]">
           💡 Tip: {currentTip}
@@ -456,14 +444,12 @@ export default function Timer() {
       </div>
 
       <div className="flex flex-col items-center gap-6 mt-2">
-        {/* Standard Controls */}
         <div className="flex items-center gap-6">
           <button onClick={handleRestart} className="w-12 h-12 rounded-xl border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors text-lg flex items-center justify-center group" title="Restart Timer"><span className="group-active:-rotate-90 transition-transform">↺</span></button>
           <button onClick={toggleTimer} className="w-[80px] h-[80px] rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-3xl flex items-center justify-center shadow-[0_10px_20px_rgba(99,102,241,0.3)] hover:opacity-90 hover:scale-105 active:scale-95 transition-all"><Icon d={running ? Icons.pause : Icons.play} size={32} className={running ? "" : "ml-1"} /></button>
           <button onClick={handleSkip} className="w-12 h-12 rounded-xl border border-white/10 bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-colors text-lg flex items-center justify-center group" title="Skip to next session"><Icon d={Icons.skip} size={20} className="group-active:translate-x-1 transition-transform" /></button>
         </div>
 
-        {/* 🚀 NEW ZEN MODE BUTTON */}
         <button 
           onClick={toggleZenMode}
           className="px-6 py-2.5 rounded-xl bg-indigo-500/10 text-indigo-300 font-bold text-[12px] uppercase tracking-wider border border-indigo-500/30 hover:bg-indigo-500/20 transition-all shadow-lg flex items-center gap-2"
@@ -472,10 +458,8 @@ export default function Timer() {
         </button>
       </div>
 
-      {/* 🎧 MODULAR AMBIENT SOUNDS */}
       <AmbientSounds />
-
-      {/* 📊 MODULAR STATS GRID */}
+      
       <FocusStats 
         sessionsToday={sessionsToday}
         focusMinutes={focusMinutes}
@@ -483,17 +467,17 @@ export default function Timer() {
         dailyFocusGoal={profile?.daily_focus_goal || 120}
       />
 
-      {/* 📈 LIFETIME ANALYTICS */}
       <SessionAnalytics studyHistory={studyHistory} />
 
-      {/* 🚀 THE AI FOCUS COACH */}
       <AIFocusCoach 
+        user={user}
+        profile={profile}
+        setProfile={setProfile}
         focusMinutes={focusMinutes} 
         sessionsToday={sessionsToday} 
         currentStreak={profile?.current_streak || 0} 
       />
 
-      {/* 🗔 MODULAR COMPLETION MODAL */}
       <CompletionModal 
         isOpen={showCompletionModal}
         onClose={() => { setShowCompletionModal(false); switchMode("shortBreak"); }}

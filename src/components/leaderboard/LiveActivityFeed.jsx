@@ -63,8 +63,8 @@ export default function LiveActivityFeed({ squadIds }) {
                 </div>
                 <div className="text-[13px] font-medium text-slate-200 leading-snug">{log.description}</div>
                 {log.xp_earned > 0 && (
-                  <div className="text-[11px] font-black text-amber-400 mt-1.5 bg-amber-500/10 inline-block px-2 py-0.5 rounded-md border border-amber-500/20">
-                    +{log.xp_earned} XP
+                  <div className="text-[11px] font-black text-amber-400 mt-1.5 bg-amber-500/10 inline-block px-2 py-0.5 rounded-md border border-amber-500/20 shadow-sm shadow-amber-500/10">
+                    +{log.xp_earned} 🪙
                   </div>
                 )}
               </div>

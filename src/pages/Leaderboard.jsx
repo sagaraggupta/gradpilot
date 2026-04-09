@@ -53,15 +53,14 @@ export default function Leaderboard() {
     if (!user?.id) return;
     setLoading(true);
     
-    // 🧠 DYNAMIC XP COLUMN: Switches DB queries based on the selected filter
-    const xpCol = timeframe === 'weekly' ? 'weekly_xp' : timeframe === 'monthly' ? 'monthly_xp' : 'total_xp';
+    // 🧠 DYNAMIC SCORE COLUMN: Fetching the infinite Pilot Score for all-time
+    const scoreCol = timeframe === 'weekly' ? 'weekly_xp' : timeframe === 'monthly' ? 'monthly_xp' : 'pilot_score';
     
     try {
-      // 1. Parallel Fetch (Global, Profile, Friendships)
-      // Note: If weekly_xp doesn't exist in your DB yet, this will fallback to total_xp in the UI gracefully.
       const [globalRes, myProfileRes, friendshipsRes] = await Promise.all([
-        supabase.from('profiles').select(`id, full_name, ${xpCol}, current_streak, is_public, equipped_frame`).eq('is_public', true).order('pilot_rating', { ascending: false }).limit(50),
-        supabase.from('profiles').select(xpCol).eq('id', user.id).single(),
+        // FIXED: Now properly ordering by scoreCol instead of hardcoded pilot_rating
+        supabase.from('profiles').select(`id, full_name, ${scoreCol}, current_streak, is_public, equipped_frame, rank_title`).eq('is_public', true).order(scoreCol, { ascending: false }).limit(50),
+        supabase.from('profiles').select(scoreCol).eq('id', user.id).single(),
         supabase.from('friendships').select('*').or(`requester_id.eq.${user.id},receiver_id.eq.${user.id}`)
       ]);
 
@@ -70,17 +69,15 @@ export default function Leaderboard() {
 
       if (isMounted) setGlobalLeaders(globalRes.data || []);
 
-      // 2. Fetch True Dynamic Rank
       if (myProfileRes.data) {
-        const myXp = myProfileRes.data[xpCol] || 0;
+        const myScore = myProfileRes.data[scoreCol] || 0;
         const { count, error: countErr } = await supabase
           .from('profiles').select('*', { count: 'exact', head: true })
-          .eq('is_public', true).gt(xpCol, myXp);
+          .eq('is_public', true).gt(scoreCol, myScore);
         
         if (!countErr && isMounted) setMyRank((count || 0) + 1);
       }
 
-      // 3. Process Squad Data
       if (friendshipsRes.data) {
         const acceptedFriendsIds = friendshipsRes.data
           .filter(f => f.status === 'accepted')
@@ -94,8 +91,9 @@ export default function Leaderboard() {
           .map(f => f.requester_id);
 
         const [squadRes, pendingRes] = await Promise.all([
-          supabase.from('profiles').select(`id, full_name, ${xpCol}, current_streak, is_public, equipped_frame`).in('id', acceptedFriendsIds).order('pilot_rating', { ascending: false }),
-          pendingIds.length > 0 ? supabase.from('profiles').select(`id, full_name, ${xpCol}, current_streak, is_public, equipped_frame`).in('id', pendingIds) : Promise.resolve({ data: [] })
+          // FIXED: Ordering by scoreCol
+          supabase.from('profiles').select(`id, full_name, ${scoreCol}, current_streak, is_public, equipped_frame, rank_title`).in('id', acceptedFriendsIds).order(scoreCol, { ascending: false }),
+          pendingIds.length > 0 ? supabase.from('profiles').select(`id, full_name, ${scoreCol}, current_streak, is_public, equipped_frame, rank_title`).in('id', pendingIds) : Promise.resolve({ data: [] })
         ]);
 
         if (isMounted) {
@@ -105,8 +103,7 @@ export default function Leaderboard() {
       }
     } catch (error) {
       console.error("🚨 Leaderboard Fetch Error:", error);
-      // Suppress toast if it's just a missing column error while you set up your DB
-      if (!error.message?.includes(xpCol)) {
+      if (!error.message?.includes(scoreCol)) {
         if (isMounted) showToast("Network error. Could not load leaderboard.");
       }
     } finally {
@@ -122,6 +119,14 @@ export default function Leaderboard() {
     return { name: "Bronze League", color: "text-orange-500", bg: "bg-orange-500/10", border: "border-orange-500/30", icon: "🛡️" };
   };
 
+  // ─── 🎖️ MILITARY RANK ENGINE ───
+  const getMilitaryRank = (score) => {
+    if (score >= 15000) return "Fleet Admiral";
+    if (score >= 5000) return "Captain";
+    if (score >= 1000) return "Navigator";
+    return "Flight Cadet";
+  };
+
   // ─── 🤝 FRIEND & SQUAD ACTIONS ───
   const handleSearchUsers = async (e) => {
     e.preventDefault();
@@ -130,7 +135,7 @@ export default function Leaderboard() {
 
     const { data } = await supabase
       .from('profiles')
-      .select('id, full_name, total_xp, equipped_frame')
+      .select('id, full_name, pilot_score, equipped_frame')
       .eq('is_public', true)
       .ilike('full_name', `%${searchQuery}%`)
       .neq('id', user.id)
@@ -197,7 +202,7 @@ export default function Leaderboard() {
   const displayData = activeTab === "global" ? globalLeaders : squadLeaders;
   const top3 = displayData.slice(0, 3);
   const theRest = displayData.slice(3);
-  const xpKey = timeframe === 'weekly' ? 'weekly_xp' : timeframe === 'monthly' ? 'monthly_xp' : 'total_xp';
+  const scoreKey = timeframe === 'weekly' ? 'weekly_xp' : timeframe === 'monthly' ? 'monthly_xp' : 'pilot_score';
 
   return (
     <div className="flex flex-col gap-8 relative pb-10 max-w-5xl mx-auto">
@@ -256,7 +261,7 @@ export default function Leaderboard() {
                   {renderAvatar(req.full_name, req.equipped_frame, "w-8 h-8", "text-[11px]")}
                   <div>
                     <div className="text-[13px] font-bold text-slate-200">{req.full_name}</div>
-                    <div className="text-[11px] text-white/40">{(req[xpKey] || 0).toLocaleString()} XP</div>
+                    <div className="text-[11px] text-white/40">{(req[scoreKey] || 0).toLocaleString()} Score</div>
                   </div>
                 </div>
                 <button onClick={() => handleAcceptRequest(req.id)} className="bg-green-500/20 text-green-400 border border-green-500/30 px-3 py-1.5 rounded-lg text-[11px] font-bold hover:bg-green-500/30 transition-colors">Accept Invite</button>
@@ -293,7 +298,7 @@ export default function Leaderboard() {
                     {renderAvatar(top3[1].full_name, top3[1].equipped_frame, "w-16 h-16", "text-xl", "border-4 border-slate-300 shadow-[0_0_20px_rgba(203,213,225,0.3)]")}
                   </div>
                   <div className="text-[14px] font-bold text-slate-200 mb-1 truncate max-w-[80px] text-center">{top3[1].full_name?.split(" ")[0]}</div>
-                  <div className="text-[12px] font-extrabold text-slate-400 mb-3">{(top3[1][xpKey] || 0).toLocaleString()} PR</div>
+                  <div className="text-[12px] font-extrabold text-slate-400 mb-3">{(top3[1][scoreKey] || 0).toLocaleString()} Score</div>
                   <div className="w-24 md:w-32 h-32 bg-gradient-to-t from-slate-400/20 to-slate-400/5 border border-slate-400/20 rounded-t-2xl flex justify-center"><span className="text-slate-400/50 font-black text-4xl mt-4">2</span></div>
                 </div>
               )}
@@ -306,7 +311,7 @@ export default function Leaderboard() {
                     {renderAvatar(top3[0].full_name, top3[0].equipped_frame, "w-20 h-20", "text-2xl", "border-4 border-amber-400 shadow-[0_0_30px_rgba(251,191,36,0.4)]")}
                   </div>
                   <div className="text-[16px] font-black text-amber-400 mb-1 drop-shadow-md truncate max-w-[100px] text-center">{top3[0].full_name?.split(" ")[0]}</div>
-                  <div className="text-[13px] font-extrabold text-amber-200/70 mb-3">{(top3[0][xpKey] || 0).toLocaleString()} PR</div>
+                  <div className="text-[13px] font-extrabold text-amber-200/70 mb-3">{(top3[0][scoreKey] || 0).toLocaleString()} Score</div>
                   <div className="w-28 md:w-36 h-40 bg-gradient-to-t from-amber-500/20 to-amber-500/5 border border-amber-500/30 rounded-t-2xl shadow-[0_0_30px_rgba(251,191,36,0.1)] flex justify-center"><span className="text-amber-500/40 font-black text-6xl mt-4">1</span></div>
                 </div>
               )}
@@ -319,7 +324,7 @@ export default function Leaderboard() {
                     {renderAvatar(top3[2].full_name, top3[2].equipped_frame, "w-16 h-16", "text-xl", "border-4 border-orange-700 shadow-[0_0_20px_rgba(194,65,12,0.3)]")}
                   </div>
                   <div className="text-[14px] font-bold text-slate-200 mb-1 truncate max-w-[80px] text-center">{top3[2].full_name?.split(" ")[0]}</div>
-                  <div className="text-[12px] font-extrabold text-orange-400 mb-3">{(top3[2][xpKey] || 0).toLocaleString()} PR</div>
+                  <div className="text-[12px] font-extrabold text-orange-400 mb-3">{(top3[2][scoreKey] || 0).toLocaleString()} Score</div>
                   <div className="w-24 md:w-32 h-24 bg-gradient-to-t from-orange-700/20 to-orange-700/5 border border-orange-700/20 rounded-t-2xl flex justify-center"><span className="text-orange-700/50 font-black text-4xl mt-4">3</span></div>
                 </div>
               )}
@@ -333,7 +338,7 @@ export default function Leaderboard() {
               <div className="grid grid-cols-12 gap-4 p-4 border-b border-white/5 bg-[#0d0d14]/50 text-[11px] font-bold text-white/40 uppercase tracking-widest">
                 <div className="col-span-2 md:col-span-1 text-center">Rank</div>
                 <div className="col-span-6 md:col-span-5 pl-2">Pilot</div>
-                <div className="col-span-4 md:col-span-3 text-right md:text-left">Total XP</div>
+                <div className="col-span-4 md:col-span-3 text-right md:text-left">Total Score</div>
                 <div className="col-span-3 hidden md:block text-right pr-4">Active Streak</div>
               </div>
 
@@ -342,8 +347,8 @@ export default function Leaderboard() {
                   const actualRank = index + 4; 
                   const isMe = pilot.id === user.id;
 
-                  const displayXp = pilot[timeframe === 'weekly' ? 'weekly_xp' : timeframe === 'monthly' ? 'monthly_xp' : 'total_xp'] || 0;
-                  const league = getLeagueDetails(actualRank); 
+                  const displayScore = pilot[scoreKey] || 0;
+                  const militaryRank = pilot.rank_title || getMilitaryRank(displayScore); 
 
                   return (
                     <div key={pilot.id} onClick={() => setSelectedPilotId(pilot.id)} className={`grid grid-cols-12 gap-4 p-4 items-center border-b border-white/5 transition-all hover:bg-white/[0.05] cursor-pointer ${isMe ? 'bg-indigo-500/10 border-l-4 border-l-indigo-500' : ''}`}>
@@ -356,16 +361,15 @@ export default function Leaderboard() {
                             {pilot.full_name} {isMe && <span className="text-[10px] bg-indigo-500/20 px-2 py-0.5 rounded ml-2 text-indigo-200">YOU</span>}
                           </div>
                           
-                          {activeTab === 'global' && (
-                            <div className={`mt-1 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border flex items-center gap-1 ${league.color} ${league.bg} ${league.border}`}>
-                              {league.icon} {league.name}
-                            </div>
-                          )}
+                          {/* Display the Military Rank instead of the old League tags! */}
+                          <div className={`mt-1 text-[10px] font-bold text-indigo-300/80`}>
+                            🎖️ {militaryRank}
+                          </div>
                         </div>
                       </div>
 
                       <div className="col-span-4 md:col-span-3 font-extrabold text-[14px] text-slate-200 text-right md:text-left">
-                        {displayXp.toLocaleString()} <span className="text-[10px] text-amber-400 ml-1">PR</span>
+                        {displayScore.toLocaleString()} <span className="text-[10px] text-indigo-400 ml-1">Score</span>
                       </div>
                       
                       <div className="col-span-3 hidden md:flex justify-end pr-4">
@@ -417,7 +421,8 @@ export default function Leaderboard() {
                     {renderAvatar(result.full_name, result.equipped_frame, "w-8 h-8", "text-[11px]")}
                     <div>
                       <div className="text-[13px] font-bold text-slate-200">{result.full_name}</div>
-                      <div className="text-[11px] text-white/40">{result.total_xp.toLocaleString()} XP</div>
+                      {/* 🛠️ FIXED: Safely calling pilot_score instead of total_xp */}
+                      <div className="text-[11px] text-white/40">{(result.pilot_score || 0).toLocaleString()} Score</div>
                     </div>
                   </div>
                   <button onClick={() => handleSendRequest(result.id)} type="button" className="bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold hover:bg-indigo-400 transition-colors">Add</button>

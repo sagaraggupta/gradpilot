@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 
 export default function ProtectedRoute() {
   const { user, loading: authLoading } = useAuth();
   const [profileStatus, setProfileStatus] = useState('checking'); 
+  const location = useLocation(); 
 
   useEffect(() => {
     const checkProfile = async () => {
@@ -14,15 +15,14 @@ export default function ProtectedRoute() {
         return;
       }
       
-      // 🚀 FIX: Select daily_focus_goal instead of just id
+      // 🚀 Check for daily_focus_goal. It will be NULL until they finish Onboarding!
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name')
+        .select('daily_focus_goal')
         .eq('id', user.id)
         .single();
 
-      // 🚀 FIX: Ensure they have a profile AND have completed the focus goal
-      if (data && data.full_name && data.full_name.trim() !== '') {
+      if (data && data.daily_focus_goal !== null) {
         setProfileStatus('exists'); 
       } else {
         setProfileStatus('missing'); 
@@ -34,7 +34,7 @@ export default function ProtectedRoute() {
     }
   }, [user, authLoading]);
 
-  // Show loading screen while auth OR profile check is running
+  // Show loading screen
   if (authLoading || profileStatus === 'checking') {
     return (
       <div className="flex h-screen items-center justify-center bg-[#0d0d14] text-slate-100 font-['Plus_Jakarta_Sans']">
@@ -51,11 +51,16 @@ export default function ProtectedRoute() {
     return <Navigate to="/login" replace />;
   }
 
-  // 2. Logged in, but NO profile or focus goal? Kick to onboarding
-  if (profileStatus === 'missing') {
+  // 2. Logged in, but haven't finished Onboarding? Trap them in the setup!
+  if (profileStatus === 'missing' && location.pathname !== '/onboarding') {
     return <Navigate to="/onboarding" replace />;
   }
 
-  // 3. Logged in WITH full profile? Let them into the Dashboard!
+  // 3. Logged in AND finished Onboarding, but trying to go back to the setup page? Kick to Dashboard!
+  if (profileStatus === 'exists' && location.pathname === '/onboarding') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // 4. Everything is good. Let them in!
   return <Outlet />;
 }

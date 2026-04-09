@@ -32,7 +32,7 @@ export default function AISidebar({
                   <span className="text-lg">{action.icon}</span>
                   <span className={`text-[12px] font-bold text-slate-200 transition-colors ${action.id === 'parse' ? 'group-hover:text-green-400' : 'group-hover:text-indigo-300'}`}>{action.name}</span>
                 </div>
-                <div className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-2 py-1 rounded-md">-{action.cost} XP</div>
+                <div className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-2 py-1 rounded-md">-{action.cost} 🪙</div>
               </button>
             );
           })}
@@ -67,7 +67,7 @@ export default function AISidebar({
                   disabled={(!isUnlocked && !canAfford) || isActive}
                   className={`w-full py-2 rounded-lg text-[11px] font-bold transition-all ${isActive ? 'bg-indigo-500/20 text-indigo-300 cursor-default' : isUnlocked ? 'bg-white/10 text-white hover:bg-white/20' : canAfford ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30' : 'bg-white/5 text-white/20 cursor-not-allowed'}`}
                 >
-                  {isActive ? 'Active' : isUnlocked ? 'Equip Persona' : `Unlock (${p.cost} XP)`}
+                  {isActive ? 'Active' : isUnlocked ? 'Equip Persona' : `Unlock (${p.cost} 🪙)`}
                 </button>
               </div>
             );

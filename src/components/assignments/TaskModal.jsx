@@ -49,11 +49,25 @@ export default function TaskModal({
         </div>
 
         <div>
-          <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-2">Priority Level</label>
+          <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider mb-2">Priority Level (Bounty)</label>
           <div className="flex gap-2 p-1 bg-white/5 rounded-xl border border-white/5">
-            {Object.entries(priorityConfig).map(([key, config]) => (
-              <button key={key} type="button" onClick={() => setNewTask({...newTask, priority: key})} className={`flex-1 py-2 rounded-lg text-xs font-bold capitalize transition-all duration-200 ${newTask.priority === key ? config.colorClass + ' shadow-md' : 'text-white/40 hover:text-white/70'}`}>{config.label}</button>
-            ))}
+            {Object.entries(priorityConfig).map(([key, config]) => {
+              // 🪙 Map the bounties so the user knows what they are fighting for!
+              const rewardMap = { low: 15, medium: 30, high: 50 };
+              return (
+                <button 
+                  key={key} 
+                  type="button" 
+                  onClick={() => setNewTask({...newTask, priority: key})} 
+                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all duration-200 flex flex-col items-center gap-0.5 ${newTask.priority === key ? config.colorClass + ' shadow-md border' : 'text-white/40 hover:text-white/70 border border-transparent'}`}
+                >
+                  <span className="capitalize">{config.label}</span>
+                  <span className={`text-[10px] ${newTask.priority === key ? 'opacity-90' : 'opacity-40'}`}>
+                    +{rewardMap[key]} 🪙
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 

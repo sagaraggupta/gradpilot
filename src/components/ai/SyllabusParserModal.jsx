@@ -14,7 +14,8 @@ export default function SyllabusParserModal({
       <form onSubmit={handleParseSyllabus} className="flex flex-col gap-4">
         <div>
           <p className="text-[13px] text-white/60 mb-4 leading-relaxed">
-            Paste the text from your course syllabus below. AI Agent will scan it, extract all assignment names and due dates, and magically add them to your Kanban board!
+            Paste the text from your course syllabus below. AI Agent will scan it, extract all assignment names and due dates, and magically add them to your Kanban board! 
+            <span className="text-amber-400 font-bold block mt-2">Cost: 150 🪙</span>
           </p>
           <textarea 
             value={syllabusText} 

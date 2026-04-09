@@ -55,12 +55,14 @@ export default function App() {
         {/* ─── PUBLIC ROUTES ─── */}
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
-        {/* <Route path="/signup" element={<SignUp />} /> */}
-        <Route path="/onboarding" element={<Onboarding />} />
 
         {/* ─── PROTECTED APP ROUTES ─── */}
-        {/* Notice we removed the path here so child routes keep their exact URLs! */}
         <Route element={<ProtectedRoute />}>
+          
+          {/* 🚀 Onboarding is protected, but outside the DashboardLayout so there is no sidebar! */}
+          <Route path="/onboarding" element={<Onboarding />} />
+
+          {/* 🚀 Main App Routes (Protected WITH Sidebar Layout) */}
           <Route element={<DashboardLayout />}>
             <Route element={<SuspenseLayout />}>
               <Route path="/dashboard" element={<Dashboard />} />
@@ -74,7 +76,6 @@ export default function App() {
               <Route path="/leaderboard" element={<Leaderboard />} />
               <Route path="/ai" element={<AIAssistant />} />
               
-              {/* Catch-all inside protected routes */}
               <Route path="*" element={<NotFound />} />
             </Route>
           </Route>

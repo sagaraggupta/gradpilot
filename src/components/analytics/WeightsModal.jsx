@@ -10,8 +10,11 @@ export default function WeightsModal({ isOpen, onClose, weights, setWeights }) {
     <Modal isOpen={isOpen} onClose={onClose} title="Configure Engine Weights">
       <div className="flex flex-col gap-4">
         <p className="text-[12px] text-white/50 mb-4 leading-relaxed">
-          Adjust what matters most to you. As an engineering student, you might care 50% about Academics and 10% about Finance. 
-          <strong className="text-indigo-400 block mt-1">The Master Score will recalculate instantly.</strong>
+          As an engineering student, your priorities shift. Adjust these sliders to define how your 
+          <strong> Master Score</strong> is calculated. 
+          <span className="text-indigo-400 block mt-1 font-bold">
+            Higher weights in Productivity and Consistency will help you rank up faster in the Pilot Leagues.
+          </span>
         </p>
         
         {Object.entries(weights).map(([category, weight]) => (
@@ -32,7 +35,7 @@ export default function WeightsModal({ isOpen, onClose, weights, setWeights }) {
         ))}
         
         <button onClick={onClose} className="w-full mt-2 py-3.5 bg-gradient-to-r from-indigo-500 to-purple-500 hover:scale-[1.02] text-white text-[13px] font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20">
-          Lock Configuration
+          Lock Configuration & Sync Ranks
         </button>
       </div>
     </Modal>

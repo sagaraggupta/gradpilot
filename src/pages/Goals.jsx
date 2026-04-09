@@ -40,8 +40,8 @@ export default function Goals() {
   const [customRewards, setCustomRewards] = useState([]);
   const [userSettings, setUserSettings] = useState({ xp_spent: 0, active_theme: 'default', unlocked_themes: ['default'] });
   
-  // Profile Engine (Focus Timer XP, Streaks, and new Avatar Frames)
-  const [profile, setProfile] = useState({ total_xp: 0, current_streak: 0, streak_freezes_owned: 0, longest_streak: 0, equipped_frame: 'none', owned_frames: ['none'] });
+  // Profile Engine (Focus Timer Credits, Pilot Score, Streaks, and new Avatar Frames)
+  const [profile, setProfile] = useState({ credits_balance: 0, pilot_score: 0, current_streak: 0, streak_freezes_owned: 0, longest_streak: 0, equipped_frame: 'none', owned_frames: ['none'] });
 
   // UI States
   const [isHabitModalOpen, setIsHabitModalOpen] = useState(false);
@@ -72,7 +72,7 @@ export default function Goals() {
   const yesterdayStr = getLocalDateString(yesterday);
 
   useEffect(() => {
-      document.title = "Goals & XP | GradPilot";
+      document.title = "Goals & Credits | GradPilot";
     }, []);
 
   // ─── GLOBAL THEME INJECTION ───
@@ -96,7 +96,7 @@ export default function Goals() {
         supabase.from('habits').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
         supabase.from('goals').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
         supabase.from('custom_rewards').select('*').eq('user_id', user.id).order('cost', { ascending: true }),
-        supabase.from('user_settings').select('*').eq('user_id', user.id).single(),
+        supabase.from('user_settings').select('*').eq('user_id', user.id).maybeSingle(), // 🚀 FIXED!
         supabase.from('profiles').select('*').eq('id', user.id).single()
       ]);
 
@@ -122,15 +122,15 @@ export default function Goals() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // ─── 🛡️ GAMIFICATION & XP MATH (Bug 3 & 6 Fix) ───
+  // ─── 🛡️ GAMIFICATION MATH (Dual Economy Update) ───
   const gamification = useMemo(() => {
     const habitsDoneToday = habits.filter(h => h.last_completed === todayStr).length;
     const highestStreak = habits.length > 0 ? Math.max(...habits.map(h => h.streak)) : 0;
     const goalsCompleted = goals.filter(g => g.progress === 100).length;
 
-    // 🐛 Bug 3 Fix: Single Source of Truth for XP. No more double counting!
-    const totalEarnedXp = profile.total_xp || 0; 
-    const currentBalance = Math.max(0, totalEarnedXp - (userSettings?.xp_spent || 0));
+    // 🪙 NEW: Wallet directly pulled from DB, completely separated from Reputation!
+    const pilotScore = profile.pilot_score || 0; 
+    const currentBalance = profile.credits_balance || 0;
 
     const badges = [
       { id: "b1", icon: "🔥", name: "On Fire", desc: "Reach a 5-day habit streak", earned: highestStreak >= 5 },
@@ -138,17 +138,16 @@ export default function Goals() {
       { id: "b3", icon: "🎯", name: "Goal Crusher", desc: "Complete your first goal", earned: goalsCompleted >= 1 },
       { id: "b4", icon: "🏆", name: "Overachiever", desc: "Complete 3+ goals", earned: goalsCompleted >= 3 },
       { id: "b5", icon: "💎", name: "Perfect Day", desc: "Complete all habits in a day", earned: habits.length > 0 && habitsDoneToday === habits.length },
-      { id: "b6", icon: "🌟", name: "Level 10", desc: "Earn 5,000+ XP", earned: totalEarnedXp >= 5000 },
+      { id: "b6", icon: "🌟", name: "Level 10", desc: "Reach 5,000+ Pilot Score", earned: pilotScore >= 5000 },
     ];
 
-    return { habitsDoneToday, highestStreak, totalEarnedXp, currentBalance, badges, badgesEarned: badges.filter(b=>b.earned).length };
-  }, [habits, goals, todayStr, userSettings?.xp_spent, profile.total_xp]); 
-  // 🐛 Bug 6 Fix: Minimized dependencies so this doesn't run on every single tiny re-render
-
-  // ─── RPG LEVEL MATH ───
-  const currentLevel = Math.floor((profile.total_xp || 0) / 1000) + 1;
-  const levelProgressPct = ((profile.total_xp || 0) % 1000) / 10; 
-  const xpToNextLevel = 1000 - ((profile.total_xp || 0) % 1000);
+    return { habitsDoneToday, highestStreak, pilotScore, currentBalance, badges, badgesEarned: badges.filter(b=>b.earned).length };
+  }, [habits, goals, todayStr, profile.credits_balance, profile.pilot_score]); 
+  
+  // ─── RPG LEVEL MATH (Using Pilot Score!) ───
+  const currentLevel = Math.floor((profile.pilot_score || 0) / 1000) + 1;
+  const levelProgressPct = ((profile.pilot_score || 0) % 1000) / 10; 
+  const xpToNextLevel = 1000 - ((profile.pilot_score || 0) % 1000);
 
   // ─── HABIT & GOAL LOGIC ───
   const handleAddHabit = async (e) => {
@@ -258,7 +257,7 @@ export default function Goals() {
     }
   };
 
-  // ─── STORE & THEME LOGIC ───
+  // ─── STORE & THEME LOGIC (CREDITS ECONOMY) ───
   const handleCreateReward = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -273,14 +272,14 @@ export default function Goals() {
   };
 
   const redeemReward = async (reward) => {
-    // 💰 FIX: Strict frontend validation using your toast!
     if (gamification.currentBalance < reward.cost) { 
-      showToast("Not enough XP to redeem this reward!"); 
+      showToast("Not enough Credits to redeem this reward!"); 
       return; 
     }
-    const newSpent = userSettings.xp_spent + reward.cost;
-    setUserSettings(prev => ({ ...prev, xp_spent: newSpent }));
-    await supabase.from('user_settings').update({ xp_spent: newSpent }).eq('user_id', user.id);
+    const newBalance = gamification.currentBalance - reward.cost;
+    setProfile(prev => ({ ...prev, credits_balance: newBalance }));
+    await supabase.from('profiles').update({ credits_balance: newBalance }).eq('id', user.id);
+    
     setRedeemCelebration(`Enjoy: ${reward.title} ${reward.icon}`);
     setTimeout(() => setRedeemCelebration(null), 4000);
   };
@@ -292,33 +291,34 @@ export default function Goals() {
       await supabase.from('user_settings').update({ active_theme: themeKey }).eq('user_id', user.id);
       showToast("Theme Equipped!");
     } else {
-      // 💰 FIX: Strict frontend validation!
       if (gamification.currentBalance < config.cost) { 
-        showToast("Nice try! Not enough XP to buy this theme."); 
+        showToast("Nice try! Not enough Credits to buy this theme."); 
         return; 
       }
-      const newSpent = userSettings.xp_spent + config.cost;
+      const newBalance = gamification.currentBalance - config.cost;
       const newUnlocked = [...userSettings.unlocked_themes, themeKey];
-      setUserSettings(prev => ({ ...prev, xp_spent: newSpent, unlocked_themes: newUnlocked, active_theme: themeKey }));
-      await supabase.from('user_settings').update({ xp_spent: newSpent, unlocked_themes: newUnlocked, active_theme: themeKey }).eq('user_id', user.id);
+      
+      setProfile(prev => ({ ...prev, credits_balance: newBalance }));
+      setUserSettings(prev => ({ ...prev, unlocked_themes: newUnlocked, active_theme: themeKey }));
+      
+      await Promise.all([
+        supabase.from('profiles').update({ credits_balance: newBalance }).eq('id', user.id),
+        supabase.from('user_settings').update({ unlocked_themes: newUnlocked, active_theme: themeKey }).eq('user_id', user.id)
+      ]);
       showToast("Theme Unlocked & Equipped!");
     }
   };
 
   const handleBuyFreeze = async () => {
-    // 💰 FIX: Strict frontend validation!
     if (gamification.currentBalance < 500) { 
-      showToast("Not enough XP to buy a Freeze!"); 
+      showToast("Not enough Credits to buy a Freeze!"); 
       return; 
     }
-    const newSpent = userSettings.xp_spent + 500;
+    const newBalance = gamification.currentBalance - 500;
     const newFreezes = profile.streak_freezes_owned + 1;
-    setUserSettings(prev => ({ ...prev, xp_spent: newSpent }));
-    setProfile(prev => ({ ...prev, streak_freezes_owned: newFreezes }));
-    await Promise.all([
-      supabase.from('user_settings').update({ xp_spent: newSpent }).eq('user_id', user.id),
-      supabase.from('profiles').update({ streak_freezes_owned: newFreezes }).eq('id', user.id)
-    ]);
+    
+    setProfile(prev => ({ ...prev, credits_balance: newBalance, streak_freezes_owned: newFreezes }));
+    await supabase.from('profiles').update({ credits_balance: newBalance, streak_freezes_owned: newFreezes }).eq('id', user.id);
     showToast("Streak Freeze equipped! 🧊");
   };
 
@@ -331,22 +331,17 @@ export default function Goals() {
       await supabase.from('profiles').update({ equipped_frame: frame.id }).eq('id', user.id);
       showToast("Frame Equipped!");
     } else {
-      // 💰 FIX: Strict frontend validation!
       if (gamification.currentBalance < frame.cost) { 
-        showToast("Nice try! Not enough XP to buy this frame."); 
+        showToast("Nice try! Not enough Credits to buy this frame."); 
         return; 
       }
       
-      const newSpent = userSettings.xp_spent + frame.cost;
+      const newBalance = gamification.currentBalance - frame.cost;
       const newOwned = [...(profile.owned_frames || ['none']), frame.id];
       
-      setUserSettings(prev => ({ ...prev, xp_spent: newSpent }));
-      setProfile(prev => ({ ...prev, owned_frames: newOwned, equipped_frame: frame.id }));
+      setProfile(prev => ({ ...prev, credits_balance: newBalance, owned_frames: newOwned, equipped_frame: frame.id }));
+      await supabase.from('profiles').update({ credits_balance: newBalance, owned_frames: newOwned, equipped_frame: frame.id }).eq('id', user.id);
       
-      await Promise.all([
-        supabase.from('user_settings').update({ xp_spent: newSpent }).eq('user_id', user.id),
-        supabase.from('profiles').update({ owned_frames: newOwned, equipped_frame: frame.id }).eq('id', user.id)
-      ]);
       showToast("Frame Unlocked & Equipped! ✨");
     }
   };
@@ -383,7 +378,7 @@ export default function Goals() {
               <ProgressBar value={levelProgressPct} color="#a855f7" height={8} />
             </div>
             <div className="text-[11px] font-bold text-white/40 whitespace-nowrap uppercase tracking-widest">
-              {xpToNextLevel} XP to Next
+              {xpToNextLevel} Score to Next
             </div>
           </div>
         </div>
@@ -391,7 +386,7 @@ export default function Goals() {
         <button onClick={() => setIsStoreOpen(true)} className="relative z-10 flex items-center gap-3 px-5 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-[0_0_20px_rgba(245,158,11,0.3)] hover:scale-105 transition-all w-full md:w-auto shrink-0">
           <div className="flex flex-col text-left mr-2">
             <span className="text-[10px] uppercase font-bold text-amber-100/70 tracking-widest leading-none">Wallet Balance</span>
-            <span className="text-[16px] font-extrabold leading-none mt-1">{gamification.currentBalance.toLocaleString()} XP</span>
+            <span className="text-[16px] font-extrabold leading-none mt-1">{gamification.currentBalance.toLocaleString()} 🪙</span>
           </div>
           <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center text-xl">🛒</div>
         </button>
@@ -416,7 +411,13 @@ export default function Goals() {
       {habits.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-2">
           <HabitAnalytics habits={habits} />
-          <AIHabitCoach habits={habits} habitsDoneToday={gamification.habitsDoneToday} />
+          <AIHabitCoach 
+            user={user} 
+            profile={profile} 
+            setProfile={setProfile} 
+            habits={habits} 
+            habitsDoneToday={gamification.habitsDoneToday} 
+          />
         </div>
       )}
 
@@ -530,7 +531,7 @@ export default function Goals() {
         handleDeleteReward={handleDeleteReward} redeemReward={redeemReward} userSettings={userSettings}
         handleBuyOrEquipTheme={handleBuyOrEquipTheme} THEME_OPTIONS={THEME_OPTIONS} SHOP_FRAMES={SHOP_FRAMES}
         getInitials={getInitials} handleBuyOrEquipFrame={handleBuyOrEquipFrame}
-        habits={habits} goals={goals} totalXp={profile.total_xp}
+        habits={habits} goals={goals} pilotScore={profile.pilot_score}
       />
 
       {/* MODALS */}
@@ -546,6 +547,9 @@ export default function Goals() {
 
       {/* 🧠 MODULAR SMART GOAL MODAL */}
       <AddGoalModal 
+        user={user}
+        profile={profile}
+        setProfile={setProfile}
         isOpen={isGoalModalOpen}
         onClose={() => setIsGoalModalOpen(false)}
         handleAddGoal={handleAddGoal}

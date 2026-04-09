@@ -1,15 +1,43 @@
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function AIDecisionEngine({ analyticsData }) {
+  const { user } = useAuth();
   const [aiInsights, setAiInsights] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [localError, setLocalError] = useState(null);
 
   const generateCorrelations = async () => {
-    if (!analyticsData) return;
+    if (!analyticsData || !user?.id) return;
     setIsAnalyzing(true);
+    setLocalError(null);
     
     try {
+      // 🪙 1. CHECK WALLET BALANCE
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('credits_balance')
+        .eq('id', user.id)
+        .single();
+
+      const currentCredits = profile?.credits_balance || 0;
+
+      if (currentCredits < 100) {
+        setLocalError("Insufficient Credits. You need 100 🪙 for a Deep Insight briefing.");
+        setIsAnalyzing(false);
+        return;
+      }
+
+      // 🪙 2. DEDUCT THE FEE (100 Credits)
+      const { error: paymentError } = await supabase
+        .from('profiles')
+        .update({ credits_balance: currentCredits - 100 })
+        .eq('id', user.id);
+
+      if (paymentError) throw new Error("Neural link payment failed.");
+
+      // 🧠 3. RUN THE AI PROMPT
       const prompt = `Act as an elite data scientist and behavioral coach for a university student.
       Here is their current dashboard data:
       - CGPA: ${analyticsData.cgpa}
@@ -18,7 +46,7 @@ export default function AIDecisionEngine({ analyticsData }) {
       - Productivity Score: ${Math.round(analyticsData.scores.Productivity)}/100
       - Consistency Score: ${Math.round(analyticsData.scores.Consistency)}/100
 
-      Task 1: Find 1 hidden correlation between their habits, focus, and grades/spending (e.g., "Your high focus time correlates with your strong CGPA").
+      Task 1: Find 1 hidden correlation between their habits, focus, and grades/spending.
       Task 2: Provide exactly 3 highly actionable recommendations.
       
       Format EXACTLY like this (3 lines, separated by the | character). No intro, no markdown.
@@ -26,13 +54,11 @@ export default function AIDecisionEngine({ analyticsData }) {
       
       Example:
       ⚠️|Your 40% productivity drop correlates with low focus hours. Block 1 hour tonight.|warning
-      🌟|Excellent budget management! This financial discipline correlates with your strong consistency.|success
-      `;
+      🌟|Excellent budget management! This financial discipline correlates with your strong consistency.|success`;
 
       const { data, error } = await supabase.functions.invoke('ai-chat', { body: { prompt } });
       if (error) throw error;
       
-      // Parse the strict format into an array of objects
       const parsedPlan = data.reply.trim().split('\n')
         .filter(line => line.includes('|'))
         .map(line => {
@@ -43,7 +69,7 @@ export default function AIDecisionEngine({ analyticsData }) {
       setAiInsights(parsedPlan);
     } catch (error) {
       console.error("AI Engine Error:", error);
-      setAiInsights([{ icon: "❌", text: "Neural link offline. Please try again.", type: "urgent" }]);
+      setLocalError("Neural link offline. Please try again later.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -62,8 +88,12 @@ export default function AIDecisionEngine({ analyticsData }) {
         </div>
         
         {!aiInsights && !isAnalyzing && (
-          <button onClick={generateCorrelations} className="px-5 py-2.5 rounded-xl bg-indigo-500 text-white text-[12px] font-bold shadow-lg shadow-indigo-500/30 hover:scale-105 transition-all shrink-0">
-            ✨ Generate Deep Insights
+          <button 
+            onClick={generateCorrelations} 
+            className="px-5 py-2.5 rounded-xl bg-indigo-500 text-white text-[12px] font-bold shadow-lg shadow-indigo-500/30 hover:scale-105 transition-all shrink-0 flex items-center gap-2"
+          >
+            ✨ Generate Deep Insights 
+            <span className="bg-black/20 px-2 py-0.5 rounded-md border border-white/10 text-amber-400">100 🪙</span>
           </button>
         )}
         
@@ -74,6 +104,12 @@ export default function AIDecisionEngine({ analyticsData }) {
           </div>
         )}
       </div>
+
+      {localError && (
+        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 text-red-400 text-[12px] rounded-xl font-bold animate-[fadeIn_0.3s_ease-out]">
+          {localError}
+        </div>
+      )}
 
       {aiInsights && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative z-10 animate-[fadeIn_0.5s_ease-out]">

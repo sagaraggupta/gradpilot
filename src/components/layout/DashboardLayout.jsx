@@ -6,7 +6,13 @@ import { useAuth } from "../../contexts/AuthContext";
 import { runBackgroundStreakCheck } from "../../lib/streakEngine";
 import { Icon, Icons } from "../ui/Icon";
 
+// 🚀 IMPORT THE ENGINE
+import useSmartNotifications from "../../hooks/useSmartNotifications";
+
 export default function DashboardLayout() {
+  // 🚀 TURN THE ENGINE ON
+  useSmartNotifications();
+
   // 🧠 FIX: Initialize state from localStorage!
   const [isCollapsed, setIsCollapsed] = useState(() => {
     return localStorage.getItem('sidebarCollapsed') === 'true';

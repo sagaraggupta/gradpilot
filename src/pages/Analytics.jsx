@@ -30,10 +30,10 @@ export default function Analytics() {
       document.title = "Analytics | GradPilot";
     }, []);
 
-  // ─── 🛡️ STRICT DATA FETCHING (Bugs 1 & 2 Fixed) ───
+  // ─── 🛡️ STRICT DATA FETCHING ───
   useEffect(() => {
     const fetchAllData = async () => {
-      if (!user?.id) return; // CRITICAL: Null guard
+      if (!user?.id) return; 
       setLoading(true);
       
       try {
@@ -48,7 +48,6 @@ export default function Analytics() {
           supabase.from('study_sessions').select('*').eq('user_id', user.id) 
         ]);
 
-        // Strict error checking across all tables
         if (tRes.error) throw tRes.error;
         if (pRes.error) throw pRes.error;
 
@@ -59,12 +58,11 @@ export default function Analytics() {
           grades: gRes.data || [],
           habits: hRes.data || [],
           goals: glRes.data || [],
-          profile: pRes.data || { monthly_budget: 7000 },
+          profile: pRes.data || { monthly_budget: 7000, credits_balance: 0 }, // 🪙 Added Wallet fallback
           sessions: sRes.data || []
         });
       } catch (error) {
         console.error("Critical Analytics Fetch Error:", error);
-        // Fallback state if database fails
       } finally {
         setLoading(false);
       }
@@ -73,9 +71,8 @@ export default function Analytics() {
     fetchAllData();
   }, [user]);
 
-  // ─── 🧮 OPTIMIZED ALGORITHMIC AGGREGATION (Bugs 3 & 5 Fixed) ───
+  // ─── 🧮 OPTIMIZED ALGORITHMIC AGGREGATION ───
   const analytics = useMemo(() => {
-    // Return early if data isn't loaded to prevent expensive math on empty arrays
     if (!data.profile.id && data.tasks.length === 0 && data.habits.length === 0) return null;
 
     const today = new Date();
@@ -83,7 +80,7 @@ export default function Analytics() {
     const currentMonth = today.getMonth();
     const currentYear = today.getFullYear();
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const currentDayOfMonth = Math.max(1, today.getDate()); // Prevent division by zero
+    const currentDayOfMonth = Math.max(1, today.getDate()); 
 
     // 1. PRODUCTIVITY
     const completedTasks = data.tasks.filter(t => t.status === "completed").length;
@@ -106,10 +103,10 @@ export default function Analytics() {
     const tPresent = data.attendance.reduce((acc, c) => acc + c.present, 0);
     const attendanceScore = tClasses ? (tPresent / tClasses) * 100 : 0;
 
-    // 5. FINANCE (🛡️ Bug 5 Fixed: Division Safety)
+    // 5. FINANCE
     const monthlyExp = data.expenses.filter(e => new Date(e.date).getMonth() === currentMonth && new Date(e.date).getFullYear() === currentYear);
     const spentThisMonth = monthlyExp.reduce((acc, e) => acc + Number(e.amount), 0);
-    const budget = Math.max(1, data.profile.monthly_budget || 7000); // NEVER let budget be 0
+    const budget = Math.max(1, data.profile.monthly_budget || 7000); 
     const budgetUsedPct = (spentThisMonth / budget) * 100;
     const dailyBurnRate = spentThisMonth / currentDayOfMonth;
     const projectedSpend = dailyBurnRate * daysInMonth;
@@ -118,7 +115,7 @@ export default function Analytics() {
     if (budgetUsedPct > 100) financeScore = Math.max(0, 100 - ((budgetUsedPct - 100) * 2));
     else if (budgetUsedPct > 0) financeScore = 100 - (budgetUsedPct * 0.2);
 
-  // MASTER SCORE (🛡️ Dynamic Weights Upgrade)
+  // MASTER SCORE
     const totalWeight = Object.values(weights).reduce((acc, val) => acc + val, 0) || 1;
     const masterScore = Math.round(
       ((productivityScore * weights.Productivity) +
@@ -135,7 +132,6 @@ export default function Analytics() {
     // 7. HABIT HEATMAP & 30-DAY GRID
     const activeHabitsCount = data.habits.filter(h => h.streak > 0).length;
     
-    // 🐛 FIX: Restored the missing last30Days math!
     const last30Days = Array.from({length: 30}, (_, i) => {
       const d = new Date();
       d.setDate(d.getDate() - (29 - i));
@@ -144,35 +140,29 @@ export default function Analytics() {
       return { date: ds, count: activeHabits };
     });
 
-    // We keep atRiskClasses because the Academics Tab still needs it!
     const atRiskClasses = data.attendance.filter(a => a.total > 0 && (a.present / a.total * 100) < a.required);
 
-    // 8. TREND MATH (This Week vs Last Week)
+    // 8. TREND MATH
     const oneWeekAgo = new Date(); oneWeekAgo.setDate(today.getDate() - 7);
     const twoWeeksAgo = new Date(); twoWeeksAgo.setDate(today.getDate() - 14);
 
-    // Productivity Trend
     const tasksThisWk = data.tasks.filter(t => new Date(t.created_at) >= oneWeekAgo).length;
     const tasksLastWk = data.tasks.filter(t => new Date(t.created_at) >= twoWeeksAgo && new Date(t.created_at) < oneWeekAgo).length;
     const prodTrend = tasksLastWk ? Math.round(((tasksThisWk - tasksLastWk) / tasksLastWk) * 100) : 0;
 
-    // Consistency Trend (Focus Sessions)
     const focusThisWk = data.sessions.filter(s => new Date(s.created_at) >= oneWeekAgo).length;
     const focusLastWk = data.sessions.filter(s => new Date(s.created_at) >= twoWeeksAgo && new Date(s.created_at) < oneWeekAgo).length;
     const consTrend = focusLastWk ? Math.round(((focusThisWk - focusLastWk) / focusLastWk) * 100) : 0;
 
     const trends = { Productivity: prodTrend, Consistency: consTrend, Academics: 0, Attendance: 0, Finance: 0 };
 
-    // 9. 🔮 PREDICTIVE ANALYTICS (Future CGPA Modeling)
-    // Assuming a standard 4-year degree has ~120 credits. 
+    // 9. PREDICTIVE ANALYTICS
     const totalDegreeCredits = 120; 
     const creditsRemaining = Math.max(0, totalDegreeCredits - tCred);
     
-    // We predict their future grades based on their current Master Score (e.g., 85 Score = 8.5 GPA trajectory)
     const predictedFutureTrajectory = Math.max(4, masterScore / 10); 
     const predictedCGPA = tCred > 0 ? ((tPts + (creditsRemaining * predictedFutureTrajectory)) / totalDegreeCredits).toFixed(2) : 0;
     
-    // If they get perfect 10/10s for the rest of their degree
     const maxPossibleCGPA = tCred > 0 ? ((tPts + (creditsRemaining * 10)) / totalDegreeCredits).toFixed(2) : 0;
 
     return { 
@@ -181,13 +171,12 @@ export default function Analytics() {
     };
   }, [data, weights]);
 
-  // ─── 🚨 AUTOMATED SMART NOTIFICATIONS (Feature #8) ───
+  // ─── 🚨 AUTOMATED SMART NOTIFICATIONS ───
   useEffect(() => {
     if (!analytics || hasNotified) return;
 
     let alertMsg = null;
     
-    // The engine checks for critical failures in order of priority
     if (analytics.atRiskClasses.length > 0) {
       alertMsg = `🚨 Warning: ${analytics.atRiskClasses.length} class(es) have critically low attendance!`;
     } else if (analytics.projectedSpend > analytics.budget) {
@@ -198,7 +187,7 @@ export default function Analytics() {
 
     if (alertMsg) {
       setToast(alertMsg);
-      setHasNotified(true); // Ensures it only fires once per session so we don't spam them
+      setHasNotified(true); 
       setTimeout(() => setToast(null), 6000);
     }
   }, [analytics, hasNotified]);
@@ -212,7 +201,6 @@ export default function Analytics() {
     );
   }
 
-  // 🛡️ Extra Safety: Don't render the dashboard until the math is finished
   if (!analytics) return null;
 
   return (
@@ -220,9 +208,19 @@ export default function Analytics() {
 
       {/* HEADER & TABS */}
       <div className="flex flex-col gap-5">
-        <div>
-          <h2 className="text-slate-100 font-bold text-[28px] font-['Plus_Jakarta_Sans'] tracking-tight">System Analytics</h2>
-          <p className="text-white/40 text-[14px] mt-1">Your entire student life, synthesized.</p>
+        <div className="flex justify-between items-start flex-wrap gap-4">
+          <div>
+            <h2 className="text-slate-100 font-bold text-[28px] font-['Plus_Jakarta_Sans'] tracking-tight">System Analytics</h2>
+            <p className="text-white/40 text-[14px] mt-1">Your entire student life, synthesized.</p>
+          </div>
+          
+          {/* 🪙 WALLET DISPLAY */}
+          <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-xl shadow-inner">
+            <span className="text-[12px] font-bold text-white/40 uppercase tracking-widest">Wallet</span>
+            <span className="text-[18px] font-extrabold text-amber-400 flex items-center gap-1.5">
+              {data.profile?.credits_balance?.toLocaleString() || 0} 🪙
+            </span>
+          </div>
         </div>
         
         {/* Sleek Tab Navigation */}
@@ -279,7 +277,6 @@ export default function Analytics() {
                   </button>
                 </div>
 
-                {/* 🕸️ MODULAR RADAR CHART (Now Clickable with Trends) */}
                 <RadarChart 
                   scores={analytics.scores} 
                   trends={analytics.trends} 
@@ -287,12 +284,12 @@ export default function Analytics() {
                 />
               </div>
 
-              {/* 🧠 MODULAR AI DECISION ENGINE */}
+              {/* 🧠 MODULAR AI DECISION ENGINE (Now powered by Credits!) */}
               <AIDecisionEngine analyticsData={analytics} />
             </>
           )}
 
-          {/* ─── TAB: FOCUS & PRODUCTIVITY ─── */}
+          {/* ... (Rest of Tabs remain exactly the same) ... */}
           {activeTab === "Focus" && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-white/5 border border-white/10 rounded-3xl p-6 flex flex-col items-center justify-center text-center">
@@ -318,7 +315,6 @@ export default function Analytics() {
             </div>
           )}
 
-          {/* ─── TAB: ACADEMICS ─── */}
           {activeTab === "Academics" && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-gradient-to-br from-purple-500/10 to-[#0d0d14] border border-purple-500/20 rounded-3xl p-6">
@@ -348,7 +344,6 @@ export default function Analytics() {
                 </div>
               </div>
 
-              {/* 🔮 NEW: PREDICTIVE CGPA MODELING */}
               <div className="md:col-span-2 bg-gradient-to-r from-blue-900/20 to-indigo-900/20 border border-blue-500/30 rounded-3xl p-6 relative overflow-hidden mt-2">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-[50px] rounded-full pointer-events-none" />
                 <h3 className="text-slate-100 font-semibold text-[16px] mb-5 flex items-center gap-2 relative z-10">
@@ -377,7 +372,6 @@ export default function Analytics() {
             </div>
           )}
 
-          {/* ─── TAB: FINANCE ─── */}
           {activeTab === "Finance" && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-white/5 border border-white/10 rounded-3xl p-6">
@@ -404,14 +398,13 @@ export default function Analytics() {
             </div>
           )}
 
-          {/* ─── TAB: CONSISTENCY ─── */}
           {activeTab === "Consistency" && (
             <HabitHeatmap last30Days={analytics.last30Days} />
           )}
 
         </motion.div>
       </AnimatePresence>
-      {/* ⚖️ WEIGHTS CONFIGURATION MODAL */}
+
       <WeightsModal 
         isOpen={isWeightsModalOpen} 
         onClose={() => setIsWeightsModalOpen(false)} 
@@ -419,7 +412,6 @@ export default function Analytics() {
         setWeights={setWeights} 
       />
 
-      {/* 🔍 DRILL DOWN MODAL */}
       <DrillDownModal 
         isOpen={!!drillDownCategory} 
         onClose={() => setDrillDownCategory(null)} 
@@ -427,7 +419,6 @@ export default function Analytics() {
         data={data} 
       />
 
-      {/* 🚨 GLOBAL NOTIFICATION TOAST */}
       {toast && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] bg-[#0d0d14] border border-white/20 text-slate-200 px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-[slideDown_0.4s_ease-out]">
           <span className="text-[14px] font-bold tracking-wide">{toast}</span>

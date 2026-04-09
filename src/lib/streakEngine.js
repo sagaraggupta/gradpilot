@@ -1,8 +1,7 @@
 import { supabase } from "./supabase";
 
 // Constants for Game Economy Balance
-const DAILY_XP_CAP = 500;
-const DECAY_PERCENTAGE = 0.05; // Lose 5% of Total XP if a streak breaks
+const DECAY_PERCENTAGE = 0.05; // Lose 5% of Pilot Score if a streak breaks
 
 export const getLocalYYYYMMDD = () => {
   const d = new Date();
@@ -22,6 +21,14 @@ const getDaysDifference = (dateStr1, dateStr2) => {
   return Math.floor((utc2 - utc1) / (1000 * 60 * 60 * 24));
 };
 
+// 🎖️ NEW: Dynamic Rank System based on Pilot Score
+export const determineRank = (score) => {
+  if (score >= 15000) return 'Fleet Admiral';
+  if (score >= 5000) return 'Captain';
+  if (score >= 1000) return 'Navigator';
+  return 'Flight Cadet';
+};
+
 // ─── 1. THE STREAK CHECKER & DECAY SYSTEM ───
 export const calculateStreakCheckUpdates = (profile, todayStr) => {
   if (!profile || !profile.last_active_date) return null;
@@ -32,40 +39,47 @@ export const calculateStreakCheckUpdates = (profile, todayStr) => {
 
   let newFreezes = profile.streak_freezes_owned || 0;
   let newStreak = profile.current_streak || 0;
-  let newTotalXp = profile.total_xp || 0;
+  let newPilotScore = profile.pilot_score || 0;
   let message = "";
   let type = "";
 
-  // 🛡️ STREAK FREEZE LOGIC
-  if (newFreezes > 0 && newFreezes >= daysMissed) {
+  // 🛡️ STREAK FREEZE LOGIC (Now requires streak > 0 to activate!)
+  if (newFreezes > 0 && newFreezes >= daysMissed && newStreak > 0) {
     newFreezes -= daysMissed;
     message = `Phew! You missed ${daysMissed} day(s), but your Freeze saved your ${newStreak}-day streak!`;
     type = "freeze_used";
   } else {
     // 💥 INACTIVITY PENALTY (DECAY SYSTEM)
-    // If they lose a streak, they lose 5% of their total XP!
-    const penalty = Math.floor(newTotalXp * DECAY_PERCENTAGE);
-    newTotalXp = Math.max(0, newTotalXp - penalty);
+    // Only penalize if they actually had a streak or score to lose
+    if (newStreak > 0 || newPilotScore > 0) {
+      const penalty = Math.floor(newPilotScore * DECAY_PERCENTAGE);
+      newPilotScore = Math.max(0, newPilotScore - penalty);
+      message = `You lost your streak and took a -${penalty} Score inactivity penalty. Time to rebuild!`;
+    } else {
+      message = "You missed a day, but since your streak was 0, you didn't lose any points!";
+    }
     
     newStreak = 0;
     newFreezes = 0; 
-    message = `You lost your streak and took a -${penalty} XP inactivity penalty. Time to rebuild!`;
     type = "streak_lost";
   }
+
+  const newRank = determineRank(newPilotScore);
 
   return {
     updates: {
       current_streak: newStreak,
       streak_freezes_owned: newFreezes,
-      total_xp: newTotalXp,
+      pilot_score: newPilotScore,
+      rank_title: newRank,
       last_streak_check_date: todayStr
     },
-    result: { message, type, newStreak, newFreezes, newTotalXp }
+    result: { message, type, newStreak, newFreezes, newPilotScore, newRank }
   };
 };
 
-// ─── 2. THE EARNER & ANTI-SPAM CAP ───
-export const calculateActivityUpdates = (profile, todayStr, xpToAdd, focusMinutesToAdd = 0) => {
+// ─── 2. THE EARNER (THE DUAL ECONOMY) ───
+export const calculateActivityUpdates = (profile, todayStr, amountToAdd, focusMinutesToAdd = 0) => {
   if (!profile) return null;
 
   let newStreak = profile.current_streak || 0;
@@ -74,7 +88,6 @@ export const calculateActivityUpdates = (profile, todayStr, xpToAdd, focusMinute
 
   let newFocus = profile.focus_minutes_today || 0;
   let newSessions = profile.sessions_today || 0;
-  let xpEarnedToday = profile.xp_earned_today || 0;
 
   // 🔄 NEW DAY RESET LOGIC
   if (profile.last_active_date !== todayStr) {
@@ -85,19 +98,20 @@ export const calculateActivityUpdates = (profile, todayStr, xpToAdd, focusMinute
     // Reset daily counters
     newFocus = 0;
     newSessions = 0;
-    xpEarnedToday = 0; 
   }
 
-  // 🛡️ ANTI-SPAM DAILY XP CAP LOGIC
-  let actualXpToAdd = xpToAdd;
-  
-  if (xpEarnedToday + xpToAdd > DAILY_XP_CAP) {
-    // Only give them whatever XP is left before hitting the cap
-    actualXpToAdd = Math.max(0, DAILY_XP_CAP - xpEarnedToday);
-  }
+  // 🪙 1. CREDITS ECONOMY (Uncapped, Spendable, with Rank Multipliers!)
+  let rankMultiplier = 1.0;
+  if (profile.rank_title === 'Navigator') rankMultiplier = 1.1; // 10% Bonus
+  if (profile.rank_title === 'Captain') rankMultiplier = 1.25;  // 25% Bonus
+  if (profile.rank_title === 'Fleet Admiral') rankMultiplier = 1.5; // 50% Bonus
 
-  xpEarnedToday += actualXpToAdd;
-  const newTotalXp = (profile.total_xp || 0) + actualXpToAdd;
+  const multipliedCredits = Math.floor(amountToAdd * rankMultiplier);
+  const newCreditsBalance = (profile.credits_balance || 0) + multipliedCredits;
+
+  // 🏆 2. PILOT SCORE ECONOMY (Infinite & Status-Driven)
+  const newPilotScore = (profile.pilot_score || 0) + amountToAdd;
+  const newRank = determineRank(newPilotScore);
 
   // Accumulate focus time
   newFocus += focusMinutesToAdd;
@@ -105,21 +119,24 @@ export const calculateActivityUpdates = (profile, todayStr, xpToAdd, focusMinute
 
   return {
     updates: {
-      total_xp: newTotalXp,
+      // Notice: No score_earned_today here! This stops the 400 Bad Request crash.
+      credits_balance: newCreditsBalance,
+      pilot_score: newPilotScore,
+      rank_title: newRank,
       current_streak: newStreak,
       longest_streak: newLongest,
       focus_minutes_today: newFocus,
       sessions_today: newSessions,
-      xp_earned_today: xpEarnedToday, // 👈 Track their daily limit
       last_active_date: todayStr
     },
     result: { 
-      newXp: newTotalXp, 
+      newCredits: newCreditsBalance, 
+      newScore: newPilotScore, 
+      newRank,
       newStreak, 
       streakExtendedToday, 
       newFocus, 
-      newSessions,
-      hitCap: actualXpToAdd < xpToAdd // Tells the frontend if they hit the cap!
+      newSessions
     }
   };
 };
@@ -139,13 +156,21 @@ export const runBackgroundStreakCheck = async (userId) => {
   return stateUpdate.result;
 };
 
-export const processActivityXP = async (userId, xpToAdd, focusMinutesToAdd = 0) => {
+// Keeping the function name processActivityXP so your components don't break!
+export const processActivityXP = async (userId, amountToAdd, focusMinutesToAdd = 0) => {
   const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
   const todayStr = getLocalYYYYMMDD();
 
-  const stateUpdate = calculateActivityUpdates(profile, todayStr, xpToAdd, focusMinutesToAdd);
+  const stateUpdate = calculateActivityUpdates(profile, todayStr, amountToAdd, focusMinutesToAdd);
   if (!stateUpdate) return null;
 
-  await supabase.from('profiles').update(stateUpdate.updates).eq('id', userId);
-  return stateUpdate.result;
+  // 🚨 Force Supabase to tell us exactly what it is mad about
+  const { data, error } = await supabase.from('profiles').update(stateUpdate.updates).eq('id', userId);
+  
+  if (error) {
+    console.error("❌ EXACT SUPABASE ERROR:", error.message);
+    console.error("❌ SUPABASE DETAILS:", error.details);
+  }
+  
+  return stateUpdate.result; 
 };

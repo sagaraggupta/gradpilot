@@ -65,8 +65,8 @@ export default function ProfileModal({ isOpen, onClose, pilotId }) {
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-[#0d0d14] border border-white/10 p-4 rounded-2xl flex flex-col items-center text-center shadow-inner">
               <span className="text-2xl mb-1">🌟</span>
-              <span className="text-[20px] font-black text-amber-400">{stats.profile.total_xp?.toLocaleString() || 0}</span>
-              <span className="text-[10px] text-white/40 font-bold uppercase tracking-widest mt-1">Total XP</span>
+              <span className="text-[20px] font-black text-amber-400">{stats.profile.pilot_score?.toLocaleString() || 0}</span>
+              <span className="text-[10px] text-white/40 font-bold uppercase tracking-widest mt-1">Pilot Score</span>
             </div>
             
             <div className="bg-[#0d0d14] border border-white/10 p-4 rounded-2xl flex flex-col items-center text-center shadow-inner">

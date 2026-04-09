@@ -11,8 +11,6 @@ export default function Topbar() {
   const location = useLocation();
   const navigate = useNavigate();
   
-  const [walletXP, setWalletXP] = useState(0);
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [toast, setToast] = useState(null);
@@ -20,9 +18,6 @@ export default function Topbar() {
 
   const [profile, setProfile] = useState(null);
   const [formData, setFormData] = useState({ name: "", dailyGoal: 120, budget: 7000, isPublic: true });
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
 
   const getPageTitle = () => {
     const path = location.pathname.split("/")[1];
@@ -49,7 +44,6 @@ export default function Topbar() {
 
         if (isMounted && pData) {
           setProfile(pData);
-          setWalletXP(pData.total_xp || 0); // Uses the DB truth
           setFormData({
             name: pData.full_name || user.user_metadata?.full_name || "",
             dailyGoal: pData.daily_focus_goal || 120,
@@ -67,32 +61,6 @@ export default function Topbar() {
     fetchRealData();
     return () => { isMounted = false; };
   }, [user, location.pathname]); 
-
-  // ─── 🛡️ SECURE DEBOUNCED SEARCH ───
-  useEffect(() => {
-    if (!searchQuery.trim() || !user?.id) {
-      setSearchResults([]);
-      return;
-    }
-
-    const delayDebounceFn = setTimeout(async () => {
-      try {
-        const [ { data: tRes }, { data: gRes } ] = await Promise.all([
-          supabase.from('tasks').select('id, title, type').eq('user_id', user.id).ilike('title', `%${searchQuery}%`).limit(5),
-          supabase.from('goals').select('id, title').eq('user_id', user.id).ilike('title', `%${searchQuery}%`).limit(5)
-        ]);
-
-        setSearchResults([
-          ...(tRes || []).map(t => ({ ...t, source: 'task' })),
-          ...(gRes || []).map(g => ({ ...g, source: 'goal' }))
-        ]);
-      } catch (err) {
-        console.error("Search failed:", err);
-      }
-    }, 300); 
-
-    return () => clearTimeout(delayDebounceFn); 
-  }, [searchQuery, user]);
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -172,45 +140,22 @@ export default function Topbar() {
         </div>
 
         <div className="flex items-center gap-4 ml-auto w-full md:w-auto justify-end">
-          
-          {/* SEARCH BAR */}
-          <div className="relative w-full md:w-64">
-            <div className={`flex items-center bg-[#13131a] border rounded-xl px-3 py-2 transition-colors ${isSearchOpen ? 'border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.1)]' : 'border-white/5'}`}>
-              <Icon d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" size={16} className="text-white/40" />
-              <input 
-                type="text" 
-                placeholder="Search tasks..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-transparent border-none text-[13px] text-slate-200 ml-2 w-full outline-none placeholder:text-white/30"
-                onFocus={() => setIsSearchOpen(true)}
-                onBlur={() => setTimeout(() => setIsSearchOpen(false), 200)}
-              />
-            </div>
-
-            {isSearchOpen && (
-              <div className="absolute top-full mt-2 w-full bg-[#1a1a24] border border-white/10 rounded-xl shadow-2xl overflow-hidden py-2 z-50 animate-[fadeIn_0.1s_ease-out]">
-                {searchResults.length > 0 ? (
-                  <>
-                    <div className="px-3 py-1.5 text-[10px] font-bold text-white/30 uppercase tracking-widest">Found</div>
-                    {searchResults.map(res => (
-                      <div key={res.id} onClick={() => navigate('/assignments')} className="flex flex-col px-4 py-2 hover:bg-white/5 cursor-pointer transition-colors">
-                        <span className="text-[13px] font-bold text-indigo-300 truncate">{res.title}</span>
-                      </div>
-                    ))}
-                  </>
-                ) : (
-                  <div className="px-4 py-3 text-[12px] text-white/40 text-center">Start typing to search...</div>
-                )}
-              </div>
-            )}
-          </div>
 
           <div className="w-px h-6 bg-white/10 hidden md:block"></div>
 
-          <div className="hidden sm:flex items-center gap-2 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20 px-3 py-1.5 rounded-lg">
-            <span className="text-amber-400 text-sm drop-shadow-md">⚡</span>
-            <span className="text-[13px] font-extrabold text-amber-400">{walletXP.toLocaleString()} PR</span>
+          {/* 🪙 NEW DUAL ECONOMY WALLET */}
+          <div className="hidden sm:flex items-center gap-3 bg-[#0d0d14] border border-white/10 px-4 py-2 rounded-2xl shadow-sm">
+            {/* Spendable Credits */}
+            <div className="flex items-center gap-2 border-r border-white/10 pr-3" title="Spendable Credits">
+              <span className="text-[14px]">🪙</span>
+              <span className="text-[13px] font-bold text-slate-200">Credits: {profile?.credits_balance || 0}</span>
+            </div>
+            {/* Rank & Pilot Score */}
+            <div className="flex items-center gap-2 pl-1" title="Global Rank & Score">
+              <span className="text-indigo-400 text-[14px]">🎖️</span>
+              <span className="text-[13px] font-bold text-slate-200">Rank: {profile?.rank_title || 'Cadet'}</span>
+              <span className="text-[11px] text-white/40 font-medium">(Score: {profile?.pilot_score || 0})</span>
+            </div>
           </div>
 
           {/* 🔥 THE REAL NOTIFICATION ENGINE (Replaces old code) */}

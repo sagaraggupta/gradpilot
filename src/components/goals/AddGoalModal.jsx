@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import Modal from '../ui/Modal';
 import { supabase } from '../../lib/supabase';
 
+// 🚀 Added user, profile, setProfile to props
 export default function AddGoalModal({
-  isOpen, onClose, handleAddGoal, newGoal, setNewGoal, isSubmitting, EMOJI_LIST
+  user, profile, setProfile, isOpen, onClose, handleAddGoal, newGoal, setNewGoal, isSubmitting, EMOJI_LIST
 }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const BREAKDOWN_COST = 20;
 
   const generateBreakdown = async () => {
     if (!newGoal.title) {
@@ -13,7 +15,19 @@ export default function AddGoalModal({
       return;
     }
     
+    // 1. Check if they have enough Credits
+    if (!profile || (profile.credits_balance || 0) < BREAKDOWN_COST) {
+      alert(`Not enough Credits! You need ${BREAKDOWN_COST} 🪙 to generate an AI Action Plan.`);
+      return;
+    }
+
     setIsAnalyzing(true);
+    
+    // 2. Optimistically deduct credits
+    const newBalance = profile.credits_balance - BREAKDOWN_COST;
+    setProfile({ ...profile, credits_balance: newBalance });
+    await supabase.from('profiles').update({ credits_balance: newBalance }).eq('id', user.id);
+
     try {
       const prompt = `Break down the goal "${newGoal.title}" into exactly 3 short, highly actionable tasks. Return ONLY a comma-separated list of the 3 tasks. No markdown, no numbers. Example: Read chapter 1, Complete practice set, Take quiz`;
       
@@ -24,6 +38,11 @@ export default function AddGoalModal({
       setNewGoal({ ...newGoal, generatedTasks: tasks });
     } catch (error) {
       console.error("AI Breakdown Error:", error);
+      // 3. Refund if the AI crashes!
+      const refundBalance = (profile?.credits_balance || 0) + BREAKDOWN_COST;
+      setProfile({ ...profile, credits_balance: refundBalance });
+      await supabase.from('profiles').update({ credits_balance: refundBalance }).eq('id', user.id);
+      alert("⚠️ AI core failed. Your credits have been refunded.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -36,8 +55,8 @@ export default function AddGoalModal({
           <div className="flex justify-between items-end mb-1.5">
             <label className="block text-[11px] font-bold text-white/40 uppercase tracking-wider">Goal Title *</label>
             {!newGoal.generatedTasks && !isAnalyzing && (
-              <button type="button" onClick={generateBreakdown} className="text-[10px] text-indigo-400 font-bold hover:text-indigo-300 transition-colors flex items-center gap-1">
-                ✨ Generate AI Action Plan
+              <button type="button" onClick={generateBreakdown} className="text-[10px] text-indigo-400 font-bold hover:text-indigo-300 transition-colors flex items-center gap-1 bg-indigo-500/10 px-2 py-1 rounded-md border border-indigo-500/20">
+                ✨ Generate AI Action Plan <span className="text-amber-400 ml-1">-{BREAKDOWN_COST} 🪙</span>
               </button>
             )}
             {isAnalyzing && <span className="text-[10px] text-indigo-400 font-bold animate-pulse">Analyzing...</span>}

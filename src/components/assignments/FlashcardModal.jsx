@@ -41,28 +41,34 @@ export default function FlashcardModal({
         <div className="flex flex-col gap-4 py-4">
           <p className="text-[13px] text-white/60 text-center mb-2">How would you like to study this assignment?</p>
           
-          <button onClick={() => generateStudyMaterial('summary')} className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 hover:border-blue-500/50 hover:bg-blue-500/10 transition-all group text-left">
-            <div className="text-3xl bg-blue-500/20 p-3 rounded-xl group-hover:scale-110 transition-transform">📄</div>
-            <div>
+          {/* Cost: 25 Credits */}
+          <button onClick={() => generateStudyMaterial('summary', 25)} className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 hover:border-blue-500/50 hover:bg-blue-500/10 transition-all group text-left relative">
+            <div className="text-3xl bg-blue-500/20 p-3 rounded-xl group-hover:scale-110 transition-transform shrink-0">📄</div>
+            <div className="flex-1">
               <div className="text-[14px] font-bold text-slate-200">Executive Summary</div>
               <div className="text-[11px] text-white/40 mt-1">A quick, high-yield overview of the core concepts.</div>
             </div>
+            <div className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-2 py-1 rounded-md shrink-0 shadow-sm">-25 🪙</div>
           </button>
 
-          <button onClick={() => generateStudyMaterial('flashcards')} className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 hover:border-fuchsia-500/50 hover:bg-fuchsia-500/10 transition-all group text-left">
-            <div className="text-3xl bg-fuchsia-500/20 p-3 rounded-xl group-hover:scale-110 transition-transform">🗂️</div>
-            <div>
+          {/* Cost: 50 Credits */}
+          <button onClick={() => generateStudyMaterial('flashcards', 50)} className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 hover:border-fuchsia-500/50 hover:bg-fuchsia-500/10 transition-all group text-left relative">
+            <div className="text-3xl bg-fuchsia-500/20 p-3 rounded-xl group-hover:scale-110 transition-transform shrink-0">🗂️</div>
+            <div className="flex-1">
               <div className="text-[14px] font-bold text-slate-200">Smart Flashcards</div>
               <div className="text-[11px] text-white/40 mt-1">Memorize facts with active recall and spaced repetition.</div>
             </div>
+            <div className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-2 py-1 rounded-md shrink-0 shadow-sm">-50 🪙</div>
           </button>
 
-          <button onClick={() => generateStudyMaterial('quiz')} className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 hover:border-green-500/50 hover:bg-green-500/10 transition-all group text-left">
-            <div className="text-3xl bg-green-500/20 p-3 rounded-xl group-hover:scale-110 transition-transform">🎯</div>
-            <div>
+          {/* Cost: 75 Credits */}
+          <button onClick={() => generateStudyMaterial('quiz', 75)} className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/10 hover:border-green-500/50 hover:bg-green-500/10 transition-all group text-left relative">
+            <div className="text-3xl bg-green-500/20 p-3 rounded-xl group-hover:scale-110 transition-transform shrink-0">🎯</div>
+            <div className="flex-1">
               <div className="text-[14px] font-bold text-slate-200">Mock Quiz</div>
               <div className="text-[11px] text-white/40 mt-1">Test your knowledge with AI-generated multiple choice questions.</div>
             </div>
+            <div className="text-[10px] font-bold text-amber-400 bg-amber-400/10 px-2 py-1 rounded-md shrink-0 shadow-sm">-75 🪙</div>
           </button>
         </div>
       )}
@@ -74,7 +80,7 @@ export default function FlashcardModal({
             {studyData.summary}
           </div>
           <button onClick={completeStudySession} className="w-full mt-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-bold text-[13px] rounded-xl shadow-lg hover:opacity-90">
-            Finish Reading (+40 XP)
+            Finish Reading (+40 🪙)
           </button>
         </div>
       )}
@@ -156,7 +162,7 @@ export default function FlashcardModal({
               <div className="flex gap-3">
                 <button onClick={() => setCurrentIndex(p => Math.max(0, p - 1))} disabled={currentIndex === 0} className="flex-1 py-3 bg-white/5 text-white font-bold rounded-xl disabled:opacity-30">← Review</button>
                 {currentIndex === studyData.length - 1 ? (
-                  <button onClick={completeStudySession} className="flex-1 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold rounded-xl">Finish (+40 XP)</button>
+                  <button onClick={completeStudySession} className="flex-1 py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold rounded-xl">Finish (+40 🪙)</button>
                 ) : (
                   <button onClick={() => setCurrentIndex(p => p + 1)} className="flex-1 py-3 bg-white/10 text-white font-bold rounded-xl">Next →</button>
                 )}

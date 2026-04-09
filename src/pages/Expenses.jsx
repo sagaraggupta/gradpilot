@@ -27,10 +27,20 @@ export default function Expenses() {
   
   const [view, setView] = useState("overview"); 
   const [monthlyBudget, setMonthlyBudget] = useState(7000);
+  
+  // 🪙 ECONOMY STATE
+  const [creditsBalance, setCreditsBalance] = useState(0); 
+
   const [currentDate, setCurrentDate] = useState(new Date());
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  
+  // 🤖 AI AUDIT STATE
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [isAuditLoading, setIsAuditLoading] = useState(false);
+  const [auditResult, setAuditResult] = useState("");
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newBudgetInput, setNewBudgetInput] = useState("");
   const [errors, setErrors] = useState({});
@@ -45,15 +55,15 @@ export default function Expenses() {
   });
 
   useEffect(() => {
-      document.title = "Expenses | GradPilot";
-    }, []);
+    document.title = "Expenses | GradPilot";
+  }, []);
 
   useEffect(() => {
     fetchData();
   }, [user]);
 
   const fetchData = async () => {
-    if (!user?.id) return; // 🐛 Bug 1 Fix: CRITICAL Null guard
+    if (!user?.id) return; 
     
     setLoading(true);
     
@@ -64,30 +74,76 @@ export default function Expenses() {
       .order('date', { ascending: false })
       .order('created_at', { ascending: false });
       
-    // 🐛 Bug 2 Fix: Handle errors instead of ignoring them
     if (expError) {
       console.error("Fetch expenses error:", expError);
-      showToast("Failed to load expenses. Please try again.", "error");
+      showToast("Failed to load expenses.", "error");
     } else if (expData) {
       setAllExpenses(expData);
     }
 
-    const { data: profileData } = await supabase.from('profiles').select('monthly_budget').eq('id', user.id).single();
+    // 🪙 FIX: Fetch credits_balance alongside the budget!
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('monthly_budget, credits_balance')
+      .eq('id', user.id)
+      .single();
     
-    if (profileData && profileData.monthly_budget) {
-      setMonthlyBudget(profileData.monthly_budget);
-      setNewBudgetInput(profileData.monthly_budget);
-    } else {
-      setMonthlyBudget(7000);
-      setNewBudgetInput(7000);
+    if (profileData) {
+      setMonthlyBudget(profileData.monthly_budget || 7000);
+      setNewBudgetInput(profileData.monthly_budget || 7000);
+      setCreditsBalance(profileData.credits_balance || 0);
     }
     
     setLoading(false);
   };
 
-  const showToast = (message) => {
-    setToast(message);
+  const showToast = (message, type = "success") => {
+    setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
+  };
+
+  // 🤖 THE PREMIUM AI AUDIT ENGINE
+  const handleRunAIAudit = async () => {
+    if (creditsBalance < 100) {
+      showToast("Not enough Credits! You need 100 🪙.", "error");
+      return;
+    }
+
+    // 1. Open Modal & Start Loading
+    setIsAuditModalOpen(true);
+    setIsAuditLoading(true);
+    setAuditResult("");
+
+    // 2. Charge the User 100 Credits
+    const newBalance = creditsBalance - 100;
+    const { error } = await supabase.from('profiles').update({ credits_balance: newBalance }).eq('id', user.id);
+
+    if (error) {
+      setIsAuditLoading(false);
+      setIsAuditModalOpen(false);
+      showToast("Transaction failed.", "error");
+      return;
+    }
+
+    // 3. Update local wallet
+    setCreditsBalance(newBalance);
+
+    // 4. Simulate AI Analysis Delay (Or call your real AI endpoint here!)
+    setTimeout(() => {
+      const topCategory = Object.keys(categoryTotals).sort((a,b) => categoryTotals[b] - categoryTotals[a])[0];
+      
+      let aiMessage = "Your finances look solid! Keep tracking your expenses to build good habits.";
+      if (topCategory) {
+        aiMessage = `I've analyzed your recent spending patterns. Your biggest financial drain right now is **${topCategory}** (₹${categoryTotals[topCategory]}). Consider finding cheaper alternatives in this category to hit your savings goals faster!`;
+      }
+      
+      if (isOverBudget) {
+        aiMessage += " ⚠️ WARNING: You have exceeded your monthly budget. Ground yourself immediately!";
+      }
+
+      setAuditResult(aiMessage);
+      setIsAuditLoading(false);
+    }, 2500); // Fake 2.5s delay to make the AI feel "heavy" and smart
   };
 
   const handleUpdateBudget = async (e) => {
@@ -124,15 +180,11 @@ export default function Expenses() {
     if (error) {
       showToast("Failed to log expense.", "error");
     } else if (data) {
-      // 🐛 Bug 4 Fix: Clean sorting insertion
       setAllExpenses(prev => {
         const updated = [data[0], ...prev];
         return updated.sort((a, b) => new Date(b.date) - new Date(a.date));
       });
-      
-      // 🐛 Bug 6 Fix: Reset pagination so they can see the new item
       setCurrentPage(1); 
-      
       setIsModalOpen(false);
       setNewExpense({ amount: "", category: "Food & Canteen", note: "", date: todayStr });
       showToast("Expense logged!");
@@ -144,16 +196,14 @@ export default function Expenses() {
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this transaction?")) return;
     
-    // 🐛 Bug 3 Fix: Store old state for rollback
     const previousExpenses = [...allExpenses];
-    
-    setAllExpenses(prev => prev.filter(e => e.id !== id)); // Optimistic UI update
+    setAllExpenses(prev => prev.filter(e => e.id !== id)); 
     
     const { error } = await supabase.from('expenses').delete().eq('id', id);
     
     if (error) {
-      setAllExpenses(previousExpenses); // Rollback!
-      showToast("Failed to delete transaction. Try again.", "error");
+      setAllExpenses(previousExpenses); 
+      showToast("Failed to delete transaction.", "error");
     } else {
       showToast("Transaction deleted.");
     }
@@ -177,12 +227,10 @@ export default function Expenses() {
   }, [allExpenses, currentDate]);
 
   const totalSpentThisMonth = monthlyExpenses.reduce((acc, curr) => acc + Number(curr.amount), 0);
-  // 🐛 Bug 5 Fix: Safe division to prevent Infinity/NaN crashes
   const safeMonthlyBudget = monthlyBudget > 0 ? monthlyBudget : 1; 
   const budgetUsedPct = Math.min(100, (totalSpentThisMonth / safeMonthlyBudget) * 100);
   const isOverBudget = totalSpentThisMonth > monthlyBudget;
 
-  // 🔥 Improvement 2: Daily Spending Limit Logic
   const dailyBudget = Math.round(safeMonthlyBudget / 30);
   const spentToday = useMemo(() => {
     const startOfToday = new Date();
@@ -191,7 +239,6 @@ export default function Expenses() {
       .filter(e => new Date(e.date) >= startOfToday)
       .reduce((acc, curr) => acc + Number(curr.amount), 0);
   }, [allExpenses]);
-  const isOverDailyBudget = spentToday > dailyBudget;
 
   const categoryTotals = monthlyExpenses.reduce((acc, curr) => {
     acc[curr.category] = (acc[curr.category] || 0) + Number(curr.amount);
@@ -214,17 +261,13 @@ export default function Expenses() {
   
   const allTimeSavings = useMemo(() => {
     if (allExpenses.length === 0) return 0;
-    
     const oldestDate = new Date(allExpenses[allExpenses.length - 1].date);
     const newestDate = new Date();
-    
     const monthsElapsed = (newestDate.getFullYear() - oldestDate.getFullYear()) * 12 + 
                           (newestDate.getMonth() - oldestDate.getMonth()) + 1; 
-
     const activeMonths = Math.max(1, monthsElapsed);
     return (activeMonths * monthlyBudget) - allTimeSpent;
   }, [allExpenses, monthlyBudget, allTimeSpent]);
-
 
   return (
     <div className="flex flex-col gap-5 relative pb-10">
@@ -257,9 +300,19 @@ export default function Expenses() {
           </div>
         )}
 
-        <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-br from-orange-400 to-orange-500 text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-lg shadow-orange-500/20 ml-auto md:ml-0">
-          <Icon d={Icons.plus} size={14} /> Add Expense
-        </button>
+        <div className="flex items-center gap-3 ml-auto md:ml-0">
+          {/* 🤖 PREMIUM AI AUDIT BUTTON */}
+          <button 
+            onClick={handleRunAIAudit} 
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-indigo-500/20 border border-indigo-500/50 text-indigo-300 text-xs font-bold hover:bg-indigo-500/30 transition-colors shadow-lg"
+          >
+            🤖 AI Audit <span className="text-amber-400 bg-[#0d0d14] px-1.5 py-0.5 rounded-md ml-1 border border-amber-500/30">100 🪙</span>
+          </button>
+
+          <button onClick={() => setIsModalOpen(true)} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-white text-xs font-bold hover:opacity-90 transition-opacity shadow-lg shadow-emerald-500/20">
+            <Icon d={Icons.plus} size={14} /> Add Expense
+          </button>
+        </div>
       </div>
 
       {/* 📊 MODULAR OVERVIEW TAB */}
@@ -292,7 +345,7 @@ export default function Expenses() {
         />
       )}
 
-      {/* 🗔 MODULAR MODALS */}
+      {/* 🗔 EXPENSE MODALS */}
       <AddExpenseModal 
         isOpen={isModalOpen} onClose={() => setIsModalOpen(false)}
         handleAddExpense={handleAddExpense} isSubmitting={isSubmitting}
@@ -306,10 +359,44 @@ export default function Expenses() {
         newBudgetInput={newBudgetInput} setNewBudgetInput={setNewBudgetInput}
       />
 
+      {/* 🤖 AI AUDIT MODAL INLINE */}
+      <Modal isOpen={isAuditModalOpen} onClose={() => !isAuditLoading && setIsAuditModalOpen(false)} title="AI Financial Audit">
+        <div className="flex flex-col items-center text-center p-4">
+          {isAuditLoading ? (
+            <>
+              <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+              <h3 className="text-lg font-bold text-slate-200">Analyzing Transactions...</h3>
+              <p className="text-[13px] text-white/50 mt-2">The AI is cross-referencing your spending habits.</p>
+            </>
+          ) : (
+            <>
+              <div className="text-5xl mb-4">🧠</div>
+              <h3 className="text-lg font-bold text-slate-200 mb-4">Audit Complete</h3>
+              <div className="bg-indigo-500/10 border border-indigo-500/30 p-4 rounded-xl text-left">
+                <p className="text-[14px] text-indigo-200 leading-relaxed">
+                  {auditResult}
+                </p>
+              </div>
+              <button 
+                onClick={() => setIsAuditModalOpen(false)} 
+                className="mt-6 w-full bg-white/10 hover:bg-white/20 text-white font-bold py-3 rounded-xl transition-colors"
+              >
+                Acknowledge
+              </button>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* 🟢 TOAST NOTIFICATION */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-green-500/10 border border-green-500/30 text-green-400 px-5 py-3 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3 animate-[fadeIn_0.3s_ease-out]">
-          <div className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center">✓</div>
-          <span className="text-[13px] font-bold">{toast}</span>
+        <div className={`fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl shadow-2xl backdrop-blur-md flex items-center gap-3 animate-[fadeIn_0.3s_ease-out]
+          ${toast.type === "error" ? "bg-red-500/10 border border-red-500/30 text-red-400" : "bg-green-500/10 border border-green-500/30 text-green-400"}
+        `}>
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center ${toast.type === "error" ? "bg-red-500/20" : "bg-green-500/20"}`}>
+            {toast.type === "error" ? "✕" : "✓"}
+          </div>
+          <span className="text-[13px] font-bold">{toast.message}</span>
         </div>
       )}
 

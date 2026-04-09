@@ -5,15 +5,15 @@ export default function DailyQuests({ habitsDoneToday, highestStreak, goalsCompl
   const quests = [
     { 
       id: 1, title: "Daily Discipline", desc: "Complete 3 habits today", 
-      current: Math.min(habitsDoneToday, 3), target: 3, xp: 50, icon: "📚", color: "#4ade80" 
+      current: Math.min(habitsDoneToday, 3), target: 3, credits: 50, icon: "📚", color: "#4ade80" 
     },
     { 
       id: 2, title: "Momentum Builder", desc: "Maintain a 3-day habit streak", 
-      current: Math.min(highestStreak, 3), target: 3, xp: 100, icon: "🔥", color: "#fb923c" 
+      current: Math.min(highestStreak, 3), target: 3, credits: 100, icon: "🔥", color: "#fb923c" 
     },
     { 
       id: 3, title: "Executioner", desc: "Complete 1 personal goal", 
-      current: Math.min(goalsCompleted, 1), target: 1, xp: 200, icon: "🎯", color: "#a855f7" 
+      current: Math.min(goalsCompleted, 1), target: 1, credits: 200, icon: "🎯", color: "#a855f7" 
     }
   ];
 
@@ -24,7 +24,7 @@ export default function DailyQuests({ habitsDoneToday, highestStreak, goalsCompl
           <h3 className="text-slate-100 font-bold text-[16px] flex items-center gap-2">
             <span className="text-xl">📜</span> Daily Quests
           </h3>
-          <p className="text-[12px] text-indigo-300/70 mt-1">Complete these to earn bonus XP automatically.</p>
+          <p className="text-[12px] text-indigo-300/70 mt-1">Complete these to earn bonus Credits automatically.</p>
         </div>
       </div>
 
@@ -51,9 +51,13 @@ export default function DailyQuests({ habitsDoneToday, highestStreak, goalsCompl
               </div>
 
               {isComplete ? (
-                <div className="mt-3 w-full py-1.5 rounded border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 text-[10px] font-bold text-center uppercase tracking-widest">Completed +{quest.xp} XP</div>
+                <div className="mt-3 w-full py-1.5 rounded border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 text-[10px] font-bold text-center uppercase tracking-widest">
+                  Completed +{quest.credits} 🪙
+                </div>
               ) : (
-                <div className="mt-3 w-full py-1.5 rounded border border-white/5 bg-black/20 text-white/30 text-[10px] font-bold text-center uppercase tracking-widest">Reward: {quest.xp} XP</div>
+                <div className="mt-3 w-full py-1.5 rounded border border-white/5 bg-black/20 text-white/30 text-[10px] font-bold text-center uppercase tracking-widest">
+                  Reward: {quest.credits} 🪙
+                </div>
               )}
             </div>
           );

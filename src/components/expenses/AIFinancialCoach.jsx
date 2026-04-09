@@ -1,14 +1,44 @@
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
 
 export default function AIFinancialCoach({ categoryTotals, monthlyBudget, totalSpent }) {
+  const { user } = useAuth(); // 🚀 Needed to fetch and update credits!
   const [aiResponse, setAiResponse] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [localError, setLocalError] = useState(null);
 
   const runAudit = async () => {
+    if (!user?.id) return;
     setIsAnalyzing(true);
+    setLocalError(null);
+
     try {
-      // 🧠 The Prompt Engineering Magic
+      // 🪙 1. CHECK WALLET BALANCE
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('credits_balance')
+        .eq('id', user.id)
+        .single();
+
+      const currentCredits = profile?.credits_balance || 0;
+
+      if (currentCredits < 100) {
+        setLocalError("Not enough Credits! You need 100 🪙 to run an AI audit.");
+        setIsAnalyzing(false);
+        return;
+      }
+
+      // 🪙 2. DEDUCT THE FEE (100 Credits)
+      const newBalance = currentCredits - 100;
+      const { error: paymentError } = await supabase
+        .from('profiles')
+        .update({ credits_balance: newBalance })
+        .eq('id', user.id);
+
+      if (paymentError) throw new Error("Payment transaction failed.");
+
+      // 🧠 3. RUN THE AI PROMPT
       const prompt = `Act as a strict, highly analytical financial advisor for a college student. 
       My Monthly Budget: ₹${monthlyBudget}. 
       Total Spent This Month: ₹${totalSpent}. 
@@ -19,12 +49,13 @@ export default function AIFinancialCoach({ categoryTotals, monthlyBudget, totalS
       Sentence 3: Give me one punchy, actionable tip to save money for the rest of the month. Do not use markdown formatting.`;
 
       const { data, error } = await supabase.functions.invoke('ai-chat', { body: { prompt } });
+      
       if (error) throw error;
       
       setAiResponse(data.reply);
     } catch (error) {
       console.error("AI Coach Error:", error);
-      setAiResponse("The AI servers are currently resting. Please try again later.");
+      setLocalError("The AI servers are resting, or a network error occurred. Try again.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -41,13 +72,13 @@ export default function AIFinancialCoach({ categoryTotals, monthlyBudget, totalS
             <span className="text-xl">🤖</span> AI Financial Coach
           </h3>
           <p className="text-[13px] text-indigo-200/70 max-w-md leading-relaxed">
-            Let our AI analyze your specific spending habits to find hidden leaks and suggest personalized ways to save.
+            Spend 100 🪙 to have our AI analyze your specific spending habits, find hidden leaks, and suggest personalized ways to save.
           </p>
         </div>
         
         {!aiResponse && !isAnalyzing && (
-          <button onClick={runAudit} className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 hover:scale-105 text-white text-[13px] font-bold shadow-lg shadow-indigo-500/30 transition-all shrink-0">
-            ✨ Run Custom Audit
+          <button onClick={runAudit} className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 hover:scale-105 text-white text-[13px] font-bold shadow-lg shadow-indigo-500/30 transition-all shrink-0 flex items-center gap-2">
+            ✨ Run Custom Audit <span className="text-amber-300 bg-black/20 px-1.5 py-0.5 rounded-md border border-amber-500/30">100 🪙</span>
           </button>
         )}
         
@@ -58,6 +89,12 @@ export default function AIFinancialCoach({ categoryTotals, monthlyBudget, totalS
           </div>
         )}
       </div>
+
+      {localError && (
+        <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 text-red-400 text-[13px] rounded-lg font-bold">
+          {localError}
+        </div>
+      )}
 
       {aiResponse && (
         <div className="mt-5 p-5 bg-[#0d0d14]/60 border border-white/10 rounded-xl text-[14px] text-slate-200 leading-relaxed relative animate-[fadeIn_0.5s_ease-out]">

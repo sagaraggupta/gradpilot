@@ -9,22 +9,22 @@ export default function StoreModal({
   isSubmitting, customRewards, handleDeleteReward, redeemReward,
   userSettings, handleBuyOrEquipTheme, THEME_OPTIONS, SHOP_FRAMES,
   getInitials, handleBuyOrEquipFrame,
-  habits, goals, totalXp
+  habits, goals, pilotScore
 }) {
   return (
-    <Modal isOpen={isStoreOpen} onClose={() => setIsStoreOpen(false)} title="XP Reward Store">
+    <Modal isOpen={isStoreOpen} onClose={() => setIsStoreOpen(false)} title="Credit Store">
       <div className="flex flex-col gap-4">
         
         <div className="bg-[#0d0d14] border border-white/10 rounded-xl p-4 flex justify-between items-center">
           <div>
             <div className="text-[11px] text-white/40 uppercase tracking-widest font-bold">Wallet Balance</div>
-            <div className="text-2xl font-extrabold text-amber-400">{gamification.currentBalance.toLocaleString()} XP</div>
+            <div className="text-2xl font-extrabold text-amber-400">{gamification.currentBalance.toLocaleString()} 🪙</div>
           </div>
           <div className="text-3xl drop-shadow-[0_0_10px_rgba(251,191,36,0.5)]">💳</div>
         </div>
 
-        {/* 🚀 MODULAR XP SOURCE TRACKER */}
-        <XPSourceTracker habits={habits} goals={goals} totalXp={totalXp} />
+        {/* 🚀 MODULAR SCORE SOURCE TRACKER */}
+        <XPSourceTracker habits={habits} goals={goals} pilotScore={pilotScore} />
 
         <div className="flex gap-1 border-b border-white/10 pb-2">
           <button onClick={() => setStoreTab("rewards")} className={`flex-1 py-2 text-[12px] font-bold rounded-t-lg transition-colors ${storeTab === "rewards" ? 'border-b-2 border-indigo-400 text-indigo-400' : 'text-white/40 hover:text-white/70'}`}>Boosts</button>
@@ -52,7 +52,7 @@ export default function StoreModal({
                     ${profile.streak_freezes_owned >= 2 ? 'bg-white/5 text-white/30 cursor-not-allowed' : 
                     gamification.currentBalance >= 500 ? 'bg-cyan-500 text-[#0d0d14] hover:bg-cyan-400 hover:scale-105 shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-white/5 text-white/30 cursor-not-allowed'}`}
                 >
-                  {profile.streak_freezes_owned >= 2 ? "Max Owned" : "500 XP"}
+                  {profile.streak_freezes_owned >= 2 ? "Max Owned" : "500 🪙"}
                 </button>
               </div>
             </div>
@@ -83,7 +83,7 @@ export default function StoreModal({
                           onClick={() => redeemReward(reward)} disabled={!canAfford}
                           className={`px-4 py-1.5 rounded-lg text-[12px] font-bold transition-all flex items-center gap-1.5 shrink-0 ml-2 ${canAfford ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 hover:scale-105' : 'bg-white/5 text-white/30 cursor-not-allowed'}`}
                         >
-                          {reward.cost} XP
+                          {reward.cost} 🪙
                         </button>
                       </div>
                     );
@@ -107,14 +107,14 @@ export default function StoreModal({
                 <div key={key} className={`flex justify-between items-center p-4 rounded-xl border transition-all ${isActive ? 'bg-indigo-500/10 border-indigo-500/50' : 'bg-[#0d0d14] border-white/5 hover:border-white/10'}`}>
                   <div>
                     <div className="text-[14px] font-bold text-slate-200">{config.name}</div>
-                    <div className="text-[11px] text-white/40 mt-0.5">{isUnlocked ? '🔓 Unlocked' : `🔒 Costs ${config.cost.toLocaleString()} XP`}</div>
+                    <div className="text-[11px] text-white/40 mt-0.5">{isUnlocked ? '🔓 Unlocked' : `🔒 Costs ${config.cost.toLocaleString()} 🪙`}</div>
                   </div>
                   <button 
                     onClick={() => handleBuyOrEquipTheme(key, config)}
                     disabled={!isUnlocked && !canAfford}
                     className={`px-4 py-2 rounded-lg text-[12px] font-bold transition-all shadow-sm ${isActive ? 'bg-indigo-500 text-white cursor-default' : isUnlocked ? 'bg-white/10 text-white hover:bg-white/20' : canAfford ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30' : 'bg-white/5 text-white/20 cursor-not-allowed'}`}
                   >
-                    {isActive ? 'Equipped ✓' : isUnlocked ? 'Equip Theme' : `Buy (${config.cost})`}
+                    {isActive ? 'Equipped ✓' : isUnlocked ? 'Equip Theme' : `Buy (${config.cost} 🪙)`}
                   </button>
                 </div>
               );
@@ -143,7 +143,7 @@ export default function StoreModal({
                     <div className="text-center mb-3">
                       <div className="text-[13px] font-bold text-slate-200">{frame.name}</div>
                       <div className={`text-[10px] font-bold mt-0.5 ${isUnlocked ? 'text-green-400' : 'text-amber-400'}`}>
-                        {isUnlocked ? "OWNED" : `${frame.cost.toLocaleString()} XP`}
+                        {isUnlocked ? "OWNED" : `${frame.cost.toLocaleString()} 🪙`}
                       </div>
                     </div>
                     <button 

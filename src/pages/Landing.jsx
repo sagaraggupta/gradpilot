@@ -83,8 +83,8 @@ const Testimonial = ({ quote, author, role, avatar }) => (
 export default function Landing() {
   const { user } = useAuth();
   
-  // DYNAMIC STATS ANIMATION (Feature #4 Fix)
-  const [xpEarned, setXpEarned] = useState(44800);
+  // DYNAMIC STATS ANIMATION
+  const [creditsEarned, setCreditsEarned] = useState(44800);
 
   // STATE FOR YOUTUBE MODAL
   const [isVideoOpen, setIsVideoOpen] = useState(false);
@@ -134,8 +134,8 @@ export default function Landing() {
     }
     metaDescription.content = "Gamify your study, automate your syllabus with AI, and track your GPA. The smart dashboard built by students, for students.";
 
-    // Simulate Live XP Data
-    const interval = setInterval(() => setXpEarned(prev => prev + Math.floor(Math.random() * 10)), 3000);
+    // Simulate Live Credits Data
+    const interval = setInterval(() => setCreditsEarned(prev => prev + Math.floor(Math.random() * 10)), 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -220,9 +220,9 @@ export default function Landing() {
           <div className="flex items-center gap-2"><Icon d={Icons.file} size={18} /> 1,200+ Syllabus Scanned</div>
           <div className="hidden md:block w-1.5 h-1.5 rounded-full bg-white/10"></div>
           {/* DYNAMIC STAT */}
-          <div className="flex items-center gap-2 text-indigo-300/80"><Icon d={Icons.star} size={18} /> {xpEarned.toLocaleString()}+ XP Earned Today</div>
+          <div className="flex items-center gap-2 text-amber-300/80"><span className="text-[16px]">🪙</span> {creditsEarned.toLocaleString()}+ Credits Earned Today</div>
           <div className="hidden md:block w-1.5 h-1.5 rounded-full bg-white/10"></div>
-          <div className="flex items-center gap-2"><Icon d={Icons.users} size={18} /> Used by Students Worldwide</div>
+          <div className="flex items-center gap-2"><Icon d={Icons.users} size={18} /> Used by Students Across India</div>
         </div>
       </motion.div>
 
@@ -265,7 +265,7 @@ export default function Landing() {
           <div className="relative z-10 flex flex-col items-center text-center">
             <div className="w-16 h-16 rounded-2xl bg-fuchsia-500/20 text-fuchsia-400 flex items-center justify-center text-xl font-black mb-6 shadow-[0_0_20px_rgba(217,70,239,0.2)]">2</div>
             <h3 className="text-lg font-bold text-white mb-2">Gamify Your Study</h3>
-            <p className="text-[14px] text-white/50">Use the Focus Timer to enter deep work, and earn Pilot Rating (PR) points for your discipline.</p>
+            <p className="text-[14px] text-white/50">Use the Focus Timer to enter deep work. Earn spendable <strong>Credits</strong> and build your <strong>Pilot Score</strong>.</p>
           </div>
           <div className="relative z-10 flex flex-col items-center text-center">
             <div className="w-16 h-16 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-xl font-black mb-6 shadow-[0_0_20px_rgba(245,158,11,0.2)]">3</div>
@@ -284,7 +284,7 @@ export default function Landing() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <FeatureCard colorClass="purple" icon={Icons.zap} title="AI Syllabus & Flashcards" desc="Let AI extract your syllabus due dates instantly, or generate interactive study flashcards for any assignment." />
-          <FeatureCard colorClass="amber" icon={Icons.star} title="Gamified PR Economy" desc="Earn Pilot Rating for completing focus sessions and crushing habits. Rank up into the Diamond League." />
+          <FeatureCard colorClass="amber" icon={Icons.star} title="Dual Economy & Ranks" desc="Earn spendable Credits to buy profile cosmetics, and build your infinite Pilot Score to rank up from Flight Cadet to Fleet Admiral." />
           <FeatureCard colorClass="orange" icon={Icons.trophy} title="Study Squad Leaderboards" desc="Issue active bounties to friends or compete on the Global Campus leaderboard. See who is the most productive." />
           <FeatureCard colorClass="cyan" icon={Icons.clock} title="Smart Focus Timer" desc="A built-in Pomodoro timer with an evolving digital pet that tracks your deep-work minutes and syncs to your rating." />
           <FeatureCard colorClass="indigo" icon={Icons.file} title="AI Daily Commander" desc="A dynamic mission control dashboard that calculates the mathematical urgency of your tasks every morning." />
@@ -304,7 +304,7 @@ export default function Landing() {
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Testimonial quote="GradPilot completely changed how I study. The AI syllabus extractor saved me hours of manual data entry during syllabus week." author="Priya S." role="Computer Science, Junior" avatar="PS" />
-          <Testimonial quote="The Gamified Leaderboard is dangerously addictive. I literally studied for an extra two hours just so I could pass my friend in the Diamond League." author="Rahul M." role="Pre-Med, Sophomore" avatar="RM" />
+          <Testimonial quote="The Military Rank system is dangerously addictive. I literally studied for an extra two hours just so I could pass my friend and finally reach Fleet Admiral." author="Rahul M." role="Pre-Med, Sophomore" avatar="RM" />
           <Testimonial quote="Having my tasks, attendance, and budget in one single dashboard makes me feel like I actually have my life together." author="Ananya K." role="Business Administration, Senior" avatar="AK" />
         </div>
       </motion.div>

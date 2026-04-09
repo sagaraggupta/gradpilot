@@ -1,13 +1,25 @@
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 
-export default function AIFocusCoach({ focusMinutes, sessionsToday, currentStreak }) {
+export default function AIFocusCoach({ user, profile, setProfile, focusMinutes, sessionsToday, currentStreak }) {
   const [aiResponse, setAiResponse] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const COACH_COST = 15; // Set the premium cost here!
 
   const getCoachAdvice = async () => {
+    // 1. Check if they can afford it
+    if (!profile || (profile.credits_balance || 0) < COACH_COST) {
+      alert(`You need ${COACH_COST} 🪙 Credits to use the AI Coach. Complete a session to earn more!`);
+      return;
+    }
+
     setIsAnalyzing(true);
     try {
+      // 2. Optimistically deduct credits for snappy UI
+      const newBalance = profile.credits_balance - COACH_COST;
+      setProfile({ ...profile, credits_balance: newBalance });
+      await supabase.from('profiles').update({ credits_balance: newBalance }).eq('id', user.id);
+
       const prompt = `Act as a high-performance productivity coach. 
       My stats today: ${focusMinutes} minutes focused across ${sessionsToday} sessions. 
       My current daily streak is ${currentStreak} days.
@@ -20,7 +32,13 @@ export default function AIFocusCoach({ focusMinutes, sessionsToday, currentStrea
       
       setAiResponse(data.reply);
     } catch (error) {
-      setAiResponse("Your focus is so intense it broke our AI servers. Keep going!");
+      console.error(error);
+      // 3. Refund if the AI fails!
+      const refundBalance = (profile?.credits_balance || 0) + COACH_COST;
+      setProfile({ ...profile, credits_balance: refundBalance });
+      await supabase.from('profiles').update({ credits_balance: refundBalance }).eq('id', user.id);
+      
+      setAiResponse("⚠️ Connection failed. Your credits have been refunded.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -40,8 +58,12 @@ export default function AIFocusCoach({ focusMinutes, sessionsToday, currentStrea
         </div>
 
         {!aiResponse && !isAnalyzing && (
-          <button onClick={getCoachAdvice} className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-indigo-500/20 hover:border-indigo-500/50 hover:text-indigo-300 text-[12px] font-bold text-white/60 transition-all">
-            Get Daily Insight
+          <button 
+            onClick={getCoachAdvice} 
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-500/10 border border-indigo-500/30 hover:bg-indigo-500/20 hover:border-indigo-500/50 text-[12px] font-bold text-indigo-300 transition-all shadow-md group"
+          >
+            <span>Get Daily Insight</span>
+            <span className="bg-indigo-500/20 px-1.5 py-0.5 rounded text-[10px] text-amber-400 group-hover:bg-indigo-500/30 transition-colors">-{COACH_COST} 🪙</span>
           </button>
         )}
         

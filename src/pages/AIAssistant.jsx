@@ -8,17 +8,17 @@ import SyllabusParserModal from "../components/ai/SyllabusParserModal";
 
 const PERSONAS = {
   standard: { id: "standard", name: "GradPilot Base", icon: "🤖", cost: 0, desc: "Helpful and polite." },
-  eli5: { id: "eli5", name: "Explain Like I'm 5", icon: "🧸", cost: 100, desc: "Simplifies complex topics." },
-  socratic: { id: "socratic", name: "Socratic Tutor", icon: "🦉", cost: 150, desc: "Asks questions to make you think." },
-  strict: { id: "strict", name: "Strict Professor", icon: "🧐", cost: 200, desc: "Tough love and high standards." }
+  eli5: { id: "eli5", name: "Explain Like I'm 5", icon: "🧸", cost: 200, desc: "Simplifies complex topics." },
+  socratic: { id: "socratic", name: "Socratic Tutor", icon: "🦉", cost: 300, desc: "Asks questions to make you think." },
+  strict: { id: "strict", name: "Strict Professor", icon: "🧐", cost: 500, desc: "Tough love and high standards." }
 };
 
 const SMART_ACTIONS = [
-  { id: "audit", name: "Audit My Finances", command: "/audit", cost: 25, icon: "💸" },
-  { id: "coach", name: "Analyze Performance", command: "/coach", cost: 25, icon: "🧠" },
-  { id: "studyplan", name: "Generate Study Plan", command: "/studyplan", cost: 20, icon: "📅" },
-  { id: "roast", name: "Roast My Productivity", command: "/roast", cost: 15, icon: "🔥" },
-  { id: "parse", name: "Parse Syllabus (Auto-Add)", command: "modal:parse", cost: 50, icon: "📄" }
+  { id: "audit", name: "Audit My Finances", command: "/audit", cost: 100, icon: "💸" },
+  { id: "coach", name: "Analyze Performance", command: "/coach", cost: 100, icon: "🧠" },
+  { id: "studyplan", name: "Generate Study Plan", command: "/studyplan", cost: 75, icon: "📅" },
+  { id: "roast", name: "Roast My Productivity", command: "/roast", cost: 50, icon: "🔥" },
+  { id: "parse", name: "Parse Syllabus (Auto-Add)", command: "modal:parse", cost: 150, icon: "📄" }
 ];
 
 export default function AIAssistant() {
@@ -67,11 +67,11 @@ export default function AIAssistant() {
         supabase.from('tasks').select('*').eq('user_id', user.id),
         supabase.from('habits').select('*').eq('user_id', user.id),
         supabase.from('goals').select('*').eq('user_id', user.id),
-        supabase.from('user_settings').select('*').eq('user_id', user.id).single(),
+        supabase.from('user_settings').select('*').eq('user_id', user.id).maybeSingle(), // 🚀 FIXED!
         supabase.from('study_sessions').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
         supabase.from('profiles').select('*').eq('id', user.id).single(),
         supabase.from('expenses').select('*').eq('user_id', user.id),
-        supabase.from('chat_history').select('role, text').eq('user_id', user.id).order('created_at', { ascending: true }) // 🚀 NEW!
+        supabase.from('chat_history').select('role, text').eq('user_id', user.id).order('created_at', { ascending: true })
       ]);
       
       [tRes, hRes, gRes, sRes, sessionRes, pRes, eRes, chatRes].forEach(res => {
@@ -102,12 +102,12 @@ export default function AIAssistant() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  // ─── XP MATH ───
+  // ─── CREDITS MATH ───
   const { currentBalance, activePersona, unlockedPersonas } = useMemo(() => {
-    // 🐛 Bug 3 Fix: Loading fallback to prevent temporary wrong XP
     if (!profile) return { currentBalance: 0, activePersona: 'standard', unlockedPersonas: ['standard'] };
 
-    let earned = profile.total_xp || 0; 
+    // 🪙 NEW: Pulling from the newly renamed credits_balance column
+    let earned = profile.credits_balance || 0; 
     
     habits.forEach(h => earned += (h.streak * 50));
     goals.forEach(g => { earned += (g.progress === 100 ? 500 : g.progress * 5); });
@@ -128,7 +128,7 @@ export default function AIAssistant() {
   };
 
   const unlockPersona = async (personaId, cost) => {
-    if (currentBalance < cost) return alert("Not enough XP!");
+    if (currentBalance < cost) return alert("Not enough Credits!");
     const newUnlocked = [...unlockedPersonas, personaId];
     const newSpent = (userSettings?.xp_spent || 0) + cost;
     setUserSettings(prev => ({ ...prev, xp_spent: newSpent, unlocked_personas: newUnlocked, active_persona: personaId }));
@@ -170,8 +170,8 @@ export default function AIAssistant() {
       await supabase.from('tasks').insert(tasksToInsert);
       setTasks(prev => [...tasksToInsert, ...prev]);
       
-      // Deduct XP only on successful execution
-      await deductXP(50);
+      // Deduct Credits based on new cost
+      await deductXP(150);
 
       setIsParserOpen(false);
       setSyllabusText("");
@@ -219,14 +219,14 @@ export default function AIAssistant() {
     const finalCost = matchedCommand ? matchedCommand.cost : actionCost;
 
     if (textToSend === "modal:parse") {
-      if (currentBalance < finalCost) return alert("Not enough XP!");
+      if (currentBalance < finalCost) return alert("Not enough Credits!");
       setIsParserOpen(true);
       return;
     }
 
     if (finalCost > 0) {
       if (currentBalance < finalCost) {
-        setMessages(prev => [...prev, { role: "ai", text: "Error: Insufficient XP for this Smart Action." }]);
+        setMessages(prev => [...prev, { role: "ai", text: "Error: Insufficient Credits for this Smart Action. Keep grinding!" }]);
         return;
       }
       await deductXP(finalCost);
@@ -349,7 +349,7 @@ export default function AIAssistant() {
         setUserSettings(prev => ({ ...prev, xp_spent: refund }));
         await supabase.from('user_settings').update({ xp_spent: refund }).eq('user_id', user.id);
       }
-      setMessages(prev => [...prev, { role: "ai", text: "⚠️ Secure connection failed. Your XP has been refunded." }]);
+      setMessages(prev => [...prev, { role: "ai", text: "⚠️ Secure connection failed. Your Credits have been refunded." }]);
     } finally {
       setIsTyping(false);
     }
@@ -357,7 +357,7 @@ export default function AIAssistant() {
 
   // ─── LOADING SKELETON UI ───
   if (loading) return (
-    <div className="flex flex-col gap-6 relative h-[calc(100vh-100px)] animate-[pulse_1.5s_ease-in-out_infinite]">
+    <div className="flex flex-col gap-6 relative h-full lg:h-[calc(100vh-100px)] animate-[pulse_1.5s_ease-in-out_infinite]">
       
       {/* Header Skeleton */}
       <div className="flex justify-between items-center bg-white/5 border border-white/10 p-4 rounded-2xl shrink-0">
@@ -394,7 +394,7 @@ export default function AIAssistant() {
   );
 
   return (
-    <div className="flex flex-col gap-6 relative h-[calc(100vh-100px)]">
+    <div className="flex flex-col gap-6 relative h-full lg:h-[calc(100vh-100px)]">
       
       {/* ─── HEADER ─── */}
       <div className="flex justify-between items-center bg-white/5 border border-white/10 p-4 rounded-2xl shrink-0">
@@ -416,9 +416,9 @@ export default function AIAssistant() {
             🗑️ <span className="hidden lg:inline">Clear Chat</span>
           </button>
 
-          <div className="bg-[#0d0d14] border border-white/10 px-4 py-2 rounded-xl flex items-center gap-2 shadow-inner">
-            <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Wallet</span>
-            <span className="text-[14px] font-extrabold text-amber-400">{currentBalance.toLocaleString()} XP</span>
+          <div className="bg-[#0d0d14] border border-white/10 px-4 py-2 rounded-xl flex items-center gap-2 shadow-inner" title="Spendable Credits">
+            <span className="text-[14px]">🪙</span>
+            <span className="text-[13px] font-extrabold text-slate-200">Credits: {currentBalance.toLocaleString()}</span>
           </div>
         </div>
       </div>
@@ -470,7 +470,7 @@ export default function AIAssistant() {
               </button>
             </div>
             <div className="text-center text-[10px] font-bold text-white/30 mt-3 tracking-wide">
-              ⚡ Premium commands consume XP.
+              🪙 Premium commands consume Credits.
             </div>
           </form>
         </div>

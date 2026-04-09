@@ -43,6 +43,16 @@ export default function Onboarding() {
     setStep(prev => prev + 1);
   };
 
+  // 🚀 NEW: Safely handle the Step 4 Boot Sequence
+  useEffect(() => {
+    if (step === 4) {
+      const timer = setTimeout(() => {
+        handleSaveProfile();
+      }, 1500);
+      return () => clearTimeout(timer); // Cleanup if they somehow navigate away
+    }
+  }, [step]);
+
   const handleEnablePush = async () => {
     setIsRequestingPush(true);
     const token = await generateFCMToken();
@@ -72,7 +82,7 @@ export default function Onboarding() {
       await supabase.from('daily_quests').insert([{
         user_id: user.id,
         title: "Complete your setup sequence",
-        xp_reward: 100,
+        credits_reward: 100, // 🪙 FIXED: Now issuing Credits instead of XP!
         is_completed: true,
         assigned_date: new Date().toISOString().split('T')[0]
       }]);
@@ -212,9 +222,6 @@ export default function Onboarding() {
             
             <h2 className="text-xl font-extrabold text-slate-100 mb-2">Booting Command Center</h2>
             <p className="text-[13px] text-indigo-300/70 font-medium">Encrypting profile data...</p>
-            
-            {/* Auto-trigger the save after a tiny 1-second delay for the "effect" */}
-            {setTimeout(() => { if (!loading) handleSaveProfile() }, 1500) && ''}
           </div>
         )}
 

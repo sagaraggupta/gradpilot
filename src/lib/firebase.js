@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
-import { getMessaging, getToken, onMessage } from "firebase/messaging";
+import { getMessaging, getToken } from "firebase/messaging";
 
+// Your Firebase configuration (Matches your service worker)
 const firebaseConfig = {
   apiKey: "AIzaSyAA8FKfDKMU7tPsUDDq5376DkNIVVdYsWc",
   authDomain: "gradpilot-39.firebaseapp.com",
@@ -12,31 +13,36 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
+
+// Initialize Firebase Cloud Messaging and get a reference to the service
 export const messaging = getMessaging(app);
 
-// Function to request permission and get the FCM Token
 export const generateFCMToken = async () => {
   try {
+    // 🛡️ NEW: BROWSER SUPPORT CHECK
+    // If the browser or current environment doesn't support Push, fail gracefully!
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      console.warn("Push notifications are not supported in this browser/context.");
+      return null; 
+    }
+
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') {
-      alert("Please allow notifications!");
+      console.error("Notification permission denied by user.");
       return null;
     }
 
-    // This reaches out to Google's servers to get your unique device ID
     const token = await getToken(messaging, {
-      vapidKey: "BBp0ktEWzZoGm5R5dcoNe26DJWzuUkf3CwfupFVRu2yaUNSHL785ucsTT5D42vqP0GSO_W-_MSasUa0XyVId6TM"
+      vapidKey: "BBp0ktEWzZoGm5R5dcoNe26DJWzuUkf3CwfupFVRu2yaUNSHL785ucsTT5D42vqP0GSO_W-_MSasUa0XyVId6TM" // Make sure your key is still here!
     });
 
     if (token) {
-      console.log("🎉 FCM Token Generated:", token);
       return token;
     } else {
-      console.log("⚠️ No registration token available.");
       return null;
     }
   } catch (error) {
-    console.error("❌ Failed to generate FCM token:", error);
-    return null;
+    console.warn("FCM token generation skipped/failed:", error.message);
+    return null; // Return null so the app continues without crashing!
   }
 };

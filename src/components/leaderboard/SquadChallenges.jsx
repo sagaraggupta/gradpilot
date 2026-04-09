@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import ProgressBar from '../ui/ProgressBar';
-import Modal from '../ui/Modal'; // Ensure you import your Modal component!
+import Modal from '../ui/Modal'; 
 
 export default function SquadChallenges({ currentUserId, squadIds }) {
   const [challenges, setChallenges] = useState([]);
@@ -53,8 +53,9 @@ export default function SquadChallenges({ currentUserId, squadIds }) {
 
   return (
     <>
-      <div className="bg-gradient-to-br from-orange-500/10 to-[#0d0d14] border border-orange-500/20 rounded-3xl p-5 shadow-xl h-full flex flex-col">
-        <div className="flex justify-between items-center mb-4">
+      {/* 1. Added max-h-[400px] to strictly contain the height */}
+      <div className="bg-gradient-to-br from-orange-500/10 to-[#0d0d14] border border-orange-500/20 rounded-3xl p-5 shadow-xl h-full max-h-[400px] flex flex-col">
+        <div className="flex justify-between items-center mb-4 shrink-0">
           <h3 className="text-[14px] font-bold text-orange-400 uppercase tracking-widest flex items-center gap-2">
             <span>⚔️</span> Active Bounties
           </h3>
@@ -66,7 +67,8 @@ export default function SquadChallenges({ currentUserId, squadIds }) {
           </button>
         </div>
 
-        <div className="flex flex-col gap-3 flex-1 overflow-y-auto pr-2 -mr-2">
+        {/* 2. Added flex-1, overflow-y-auto, and custom-scrollbar */}
+        <div className="flex flex-col gap-3 flex-1 overflow-y-auto pr-2 -mr-2 custom-scrollbar">
           {challenges.length === 0 ? (
             <div className="text-white/30 text-[12px] text-center mt-4 border border-dashed border-white/10 p-4 rounded-xl">
               No active challenges. Issue one to a squadmate!
@@ -81,9 +83,9 @@ export default function SquadChallenges({ currentUserId, squadIds }) {
               const opponentProgress = 60; 
 
               return (
-                <div key={challenge.id} className="bg-[#0d0d14] border border-white/10 p-4 rounded-2xl relative overflow-hidden">
+                <div key={challenge.id} className="bg-[#0d0d14] border border-white/10 p-4 rounded-2xl relative overflow-hidden shrink-0">
                   <div className="absolute top-0 right-0 text-5xl opacity-5">⚔️</div>
-                  <div className="text-[12px] text-white/50 font-bold mb-2">Race to {challenge.xp_goal} PR</div>
+                  <div className="text-[12px] text-white/50 font-bold mb-2">Race to {challenge.xp_goal} Score</div>
                   
                   <div className="flex flex-col gap-3">
                     <div>
@@ -116,7 +118,7 @@ export default function SquadChallenges({ currentUserId, squadIds }) {
             <select 
               value={selectedFriend} 
               onChange={e => setSelectedFriend(e.target.value)}
-              className="w-full bg-[#0d0d14] border border-white/10 p-3 rounded-xl text-[13px] text-slate-200"
+              className="w-full bg-[#0d0d14] border border-white/10 p-3 rounded-xl text-[13px] text-slate-200 outline-none focus:border-orange-500/50"
               required
             >
               <option value="" disabled>Choose a squadmate...</option>
@@ -124,16 +126,16 @@ export default function SquadChallenges({ currentUserId, squadIds }) {
             </select>
           </div>
           <div>
-            <label className="text-[12px] text-white/50 font-bold mb-1 block">Target PR Goal</label>
+            <label className="text-[12px] text-white/50 font-bold mb-1 block">Target Score Goal</label>
             <input 
               type="number" 
               value={goal} 
               onChange={e => setGoal(e.target.value)}
-              className="w-full bg-[#0d0d14] border border-white/10 p-3 rounded-xl text-[13px] text-slate-200"
+              className="w-full bg-[#0d0d14] border border-white/10 p-3 rounded-xl text-[13px] text-slate-200 outline-none focus:border-orange-500/50"
               min="100" step="100" required
             />
           </div>
-          <button type="submit" className="mt-2 w-full bg-orange-500 hover:bg-orange-400 text-white font-bold py-3 rounded-xl transition-colors shadow-lg shadow-orange-500/20">
+          <button type="submit" className="mt-2 w-full bg-orange-500 hover:bg-orange-400 text-white font-bold py-3 rounded-xl transition-colors shadow-lg shadow-orange-500/20 active:scale-95">
             Send Bounty ⚔️
           </button>
         </form>

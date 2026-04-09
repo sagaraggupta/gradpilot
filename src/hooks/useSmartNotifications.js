@@ -1,62 +1,81 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function useSmartNotifications() {
   const { user } = useAuth();
+  
+  // 🛡️ ANTI-SPAM: Prevents the hook from double-firing if React re-renders the component
+  const hasCheckedThisSession = useRef(false); 
 
   useEffect(() => {
-    if (!user?.id) return;
+    // If no user, or if we already checked this session, stop immediately.
+    if (!user?.id || hasCheckedThisSession.current) return;
 
-    // 1. Ask for OS-level permission if we don't have it yet
+    // 1. Request OS Permission if they haven't decided yet
     if (Notification.permission === 'default') {
       Notification.requestPermission();
     }
 
     const checkAndNotify = async () => {
+      // 🛡️ Guard 1: Must have permission
       if (Notification.permission !== 'granted') return;
 
-      // 🛡️ ANTI-SPAM GUARD: Only nag them once per day
-      const todayStr = new Date().toISOString().split('T')[0];
+      // 🛡️ Guard 2: Only nag once per day
+      const todayStr = new Date().toLocaleDateString(); 
       const lastNotified = localStorage.getItem('gradpilot_last_notified');
       if (lastNotified === todayStr) return; 
 
-      // ⏰ TIME GUARD: Only trigger the "You're forgetting things" alert after 5:00 PM
+      // 🛡️ Guard 3: Only trigger this specific frontend nag after 5:00 PM (17:00)
       const currentHour = new Date().getHours();
       if (currentHour < 17) return; 
+      console.log("🚀 Engine running: Checking for missed habits...");
 
       try {
-        // Fetch habits they haven't done today
+        const todayISO = new Date().toISOString().split('T')[0];
+
+        // 🧠 FIX: Check for "Not Today" OR "Is Null"
         const { data: habits, error } = await supabase
           .from('habits')
           .select('name')
           .eq('user_id', user.id)
-          .neq('last_completed', todayStr);
+          .or(`last_completed.neq.${todayISO},last_completed.is.null`);
 
         if (error) throw error;
 
+        console.log("📦 Habits found from DB:", habits); // 🔍 X-Ray Vision!
+
         // If they have missed habits, fire the native OS Notification
         if (habits && habits.length > 0) {
-          new Notification("GradPilot: Streak at Risk! ⚠️", {
-            body: `You still have ${habits.length} habits left today (like ${habits[0].name}). Don't break the chain!`,
-            icon: "/pwa-192x192.png", // Make sure you have your logo in the public folder!
-            requireInteraction: true // Keeps the notification on screen until they click it
-          });
           
-          // Log that we warned them so we don't spam them again today
+          // 🚀 LOG FIRST: Save the status BEFORE firing the notification to prevent race conditions
           localStorage.setItem('gradpilot_last_notified', todayStr);
+          hasCheckedThisSession.current = true;
+
+          new Notification("GradPilot: Streak at Risk! ⚠️", {
+            body: `You still have ${habits.length} habits left today. Don't break the chain!`,
+            icon: "/GradPilot.png", // Pointing to your actual icon
+            tag: "habit-reminder", // 💡 CRITICAL: Groups notifications so they overwrite instead of stacking
+            requireInteraction: true // Keeps the notification on screen until they click or dismiss it
+          });
         }
       } catch (error) {
         console.error("Smart Notification Check Failed:", error);
       }
     };
 
-    // Run the check immediately when the app loads
-    checkAndNotify();
+    // Delay the initial check by 5 seconds so the app UI can load smoothly first
+    const initialDelay = setTimeout(() => {
+      checkAndNotify();
+    }, 5000);
 
-    // Then quietly check again every 1 hour in the background
+    // Quietly check again every 1 hour in the background if they leave the tab open
     const intervalId = setInterval(checkAndNotify, 60 * 60 * 1000);
 
-    return () => clearInterval(intervalId); // Cleanup memory when they close the app
+    // Cleanup memory when the component unmounts
+    return () => {
+      clearTimeout(initialDelay);
+      clearInterval(intervalId);
+    };
   }, [user]);
 }
