@@ -1,105 +1,140 @@
 # 🚀 GradPilot
 
-> **The AI-Powered Student Command Center.** > Turn academic survival into a gamified, highly-optimized experience.
+> **Your Personal Academic Command Center.** > GradPilot is a gamified, high-performance web application designed for students to track focus sessions, manage assignments, log attendance, and monitor daily expenses—all powered by an intelligent, context-aware AI notification engine.
 
-![React](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
-![Vite](https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)
-![TailwindCSS](https://img.shields.io/badge/tailwindcss-%2338B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white)
-![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)
-![Gemini](https://img.shields.io/badge/Google%20Gemini-8E75B2?style=for-the-badge&logo=google&logoColor=white)
-
-GradPilot is a comprehensive, gamified academic dashboard designed to help students dominate their coursework. It combines advanced task management, a bulletproof Pomodoro focus timer, and a robust AI assistant that acts as a tutor, financial auditor, and productivity coach.
+![GradPilot Preview](https://via.placeholder.com/1000x500.png?text=GradPilot+Dashboard+Preview) *(Note: Replace this link with an actual screenshot of your app!)*
 
 ---
 
 ## ✨ Core Features
 
-### 🧠 Edge-AI Study Assistant
-* **Multi-Model Fallback:** Powered natively by **Google Gemini 1.5 Flash**, with a secure, automatic failover to **LLaMA 3.1 (via Groq)** to ensure 100% uptime.
-* **Smart Actions:** Use slash commands like `/roast` (for harsh productivity checks), `/audit` (for budget pacing), and `/studyplan`.
-* **Syllabus Parser:** Paste a massive syllabus and watch the AI extract assignments, due dates, and priorities directly into your Kanban board.
-* **Unlockable Personas:** Spend earned XP to unlock custom AI personas like the *Socratic Tutor* or the *Strict Professor*.
+### ⏱️ The Focus Engine
+* **Uninterruptible Timer:** Custom-built React timer that uses `Date.now()` to perfectly track time even when browsers heavily throttle background tabs.
+* **Zen Mode & Spotify:** Distraction-free full-screen mode with automatic Spotify embed link conversion.
+* **Offline-First Sync:** If the internet drops, sessions are saved locally to `localStorage` and automatically pushed to the cloud the moment the connection returns.
 
-### 🎮 Gamified Economy (The Streak Engine)
-* **Pilot Rating:** A dynamic leaderboard system that rewards consistency over spam. 
-* **Anti-Cheat Mechanics:** Features a strict 500 Daily XP cap, a 5% inactivity decay penalty for abandoned streaks, and purchasable Streak Freezes.
-* **Offline Syncing:** Focus sessions completed offline are cached locally and automatically pushed to the cloud when connectivity returns.
+### 🔔 Context-Aware Smart Notifications (Dual-Layer)
+GradPilot doesn't just spam; it checks your database first.
+* **Layer 1 (Frontend):** An anti-spam React Hook that checks `habits` data and nudges the user via native OS notifications if they are falling behind after 5:00 PM.
+* **Layer 2 (Backend CRON):** A Supabase Edge Function (`smart-notifier`) that runs on PostgreSQL triggers to send personalized Firebase Push Notifications to the user's phone when the app is closed:
+  * **07:30 AM:** Morning Briefing (Highest priority task).
+  * **02:30 PM:** Engine Check (Only triggers if 0 focus sessions logged).
+  * **06:30 PM:** Evening Debrief (Expense logging reminder).
+  * **09:30 PM:** Blackout Warning (Streak at risk alert).
 
-### ⏱️ Advanced Focus Timer
-* **Dynamic Modes:** Pomodoro, Short Break, Long Break, and Deep Work.
-* **Zen Mode:** A distraction-free overlay featuring an **Auto-Converting Spotify Widget**—just paste a standard Spotify link and GradPilot instantly formats it into a dark-mode embed.
-* **Ambient Sounds:** Built-in Lo-Fi and white noise generation.
+### 🏆 Gamification & Progression
+* **Pilot Score & Credits:** Earn credits for focusing and completing tasks.
+* **Streaks & Freezes:** Maintain a daily focus streak. Buy "Streak Freezes" with credits to protect your rank.
+* **Military Ranks:** Climb the Global Leaderboard from Cadet to Commander.
+* **Daily Quests:** Auto-verifying quests (e.g., "Complete 2 Pomodoros") that grant bonus XP.
+
+### 📊 Academic & Financial Tracking
+* **Task Management:** Subject-based assignment tracking.
+* **Expense Tracker:** Log daily spending against a configurable Monthly Budget.
+* **Attendance Tracking:** Keep your academic attendance safely above the danger zone.
 
 ---
 
 ## 🛠️ Tech Stack
 
-**Frontend:**
-* React 19 (via Vite)
-* Tailwind CSS v4 + Framer Motion (Animations)
-* Recharts (Analytics Data Visualization)
-* React Router DOM (Navigation)
-* Vite PWA (Progressive Web App support)
-
-**Backend & Infrastructure:**
-* Supabase PostgreSQL (Database & Row Level Security)
-* Supabase Auth (Magic Links & OAuth)
-* Supabase Deno Edge Functions (Secure API & AI routing)
+* **Frontend:** React.js, Vite, Tailwind CSS
+* **Backend & Database:** Supabase (PostgreSQL, Row Level Security)
+* **Authentication:** Supabase Auth
+* **Serverless Compute:** Supabase Edge Functions (Deno), `pg_net` Cron Triggers
+* **Push Notifications:** Firebase Cloud Messaging (FCM), Service Workers
+* **Deployment:** Vercel (HTTPS Required for PWA/Service Workers)
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Quick Start (Local Development)
 
-### Prerequisites
-Make sure you have Node.js and the Supabase CLI installed on your machine.
-
-### 1. Clone the Repository
+### 1. Clone the repository
 ```bash
-git clone [https://github.com/sagaraggupta/gradpilot](https://github.com/sagaraggupta/gradpilot)
+git clone https://github.com/yourusername/gradpilot.git
 cd gradpilot
+```
 
-2. Install Dependencies
-Bash
+### 2. Install dependencies
+```bash
 npm install
+```
 
-3. Environment Variables
-Create a .env file in the root directory and add your Supabase credentials:
+### 3. Environment Variables
+Create a `.env` file in the root directory and add your keys:
 
-Code snippet
-VITE_SUPABASE_URL=your_supabase_project_url
+```env
+VITE_SUPABASE_URL=your_supabase_url
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_FIREBASE_VAPID_KEY=your_firebase_vapid_key
+```
 
-4. Deploy Edge Functions
-Ensure your AI API keys are stored securely in the Supabase Vault, then deploy the serverless functions:
-
-Bash
-npx supabase secrets set GEMINI_API_KEY=your_gemini_key
-npx supabase secrets set GROQ_API_KEY=your_groq_key
-
-npx supabase functions deploy ai-chat --no-verify-jwt
-npx supabase functions deploy parse-syllabus --no-verify-jwt
-
-5. Run the App
-Bash
+### 4. Run the development server
+```bash
 npm run dev
+```
 
-📂 Architecture Highlights
-/src/lib/streakEngine.js: The heart of the game economy. Handles complex date-math, XP compounding, penalty decays, and daily caps safely.
+> ⚠️ Note: To test Push Notifications locally, ensure you are accessing the app via `http://localhost:5173`, as browsers block Service Workers on network IPs
 
-/supabase/functions/: Holds our secure AI middleware. Uses Deno to prevent exposing API keys to the client while enforcing strict JSON schemas for data extraction.
+---
 
-📝 Roadmap & Known Issues
-[ ] Resolve React state desync bugs in the Global Leaderboard UI.
+## ☁️ Backend Setup (Supabase)
+> **Deploying the Notification Engine** > GradPilot uses a Supabase Edge Function to securely process background notifications.
 
-[ ] Implement Push Notifications via Firebase Cloud Messaging.
+### Install the Supabase CLI
 
-[ ] Add WebRTC integration for "Squad" co-working sessions.
+### Login and link your project
+```bash
+supabase login
+supabase link --project-ref your_project_ref
+```
 
+### Set your Edge Function secrets
+```bash
+supabase secrets set CRON_SECRET=your_secure_password
+supabase secrets set FIREBASE_SERVICE_ACCOUNT='{ "type": "service_account", ... }'
+```
 
-Built with ❤️ and excessive caffeine.
+### Deploy the function
+```bash
+supabase functions deploy smart-notifier
+```
 
-***
+---
 
-How does that look? It highlights all the complex engineering you've pulled off (the fallback AI, the offline sync, the game economy) in a way that sounds incredibly professional. 
+## 🔒 Security Posture
 
-Whenever you're ready to dive back into the code, let me know if we are hitting the Leaderboard next or something else!
+- **Row Level Security (RLS):**  
+  All Supabase tables are locked down with strict RLS policies, ensuring users can only read/write their own `user_id` authenticated rows.
+
+- **Edge Function Security:**  
+  The `smart-notifier` function is protected by a strict `CRON_SECRET` Bearer token check, preventing unauthorized external triggers.
+
+- **No Leaked Keys:**  
+  The `SERVICE_ROLE_KEY` is completely isolated to backend Edge Functions and never exposed to the client.
+
+---
+
+## 👨‍💻 Built By
+
+**[Sagar Gupta / sagaraggupta]**  
+🎓 3nd Year Engineering Student  
+🚀 Building tools to make students highly productive
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License**.  
+See the `LICENSE.md` file for more information.
+
+---
+
+## 🎓 You're Ready to Go!
+
+GradPilot showcases a powerful combination of frontend performance, backend automation, and thoughtful product design.
+
+Deploy it, share it with others, and keep iterating.
+
+🚀 Congratulations on building something impactful!
+
+---
