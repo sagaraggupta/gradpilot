@@ -388,10 +388,10 @@ export default function Landing() {
             {/* ─── SOCIAL MEDIA ICONS ─── */}
             <div className="flex items-center gap-4">
               {[
-                { id: 'twitter', icon: Icons.twitter, link: 'https://twitter.com/gradpilot' },
-                { id: 'instagram', icon: Icons.instagram, link: 'https://instagram.com/gradpilot' },
-                { id: 'linkedin', icon: Icons.linkedin, link: 'https://linkedin.com/company/gradpilot' },
-                { id: 'discord', icon: Icons.discord, link: 'https://discord.gg/gradpilot' }
+                { id: 'twitter', icon: Icons.twitter, link: 'https://twitter.com/iamoceangupta/' },
+                { id: 'instagram', icon: Icons.instagram, link: 'https://instagram.com/sagar.ag.gupta/' },
+                { id: 'linkedin', icon: Icons.linkedin, link: 'https://www.linkedin.com/in/sagar-ajay-gupta/' },
+                { id: 'instagram', icon: Icons.instagram, link: 'https://instagram.com/iamoceangupta/' }
               ].map((social) => (
                 <a 
                   key={social.id}
