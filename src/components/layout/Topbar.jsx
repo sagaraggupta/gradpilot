@@ -5,6 +5,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabase";
 import Modal from "../ui/Modal";
 import NotificationBell from "../ui/NotificationBell";
+import { generateFCMToken } from "../../lib/firebase"; // 🚀 Imported Firebase!
 
 export default function Topbar() {
   const { user } = useAuth();
@@ -15,6 +16,7 @@ export default function Topbar() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isRequestingPush, setIsRequestingPush] = useState(false); // 🚀 Added state for push request
 
   const [profile, setProfile] = useState(null);
   const [formData, setFormData] = useState({ name: "", dailyGoal: 120, budget: 7000, isPublic: true });
@@ -25,15 +27,14 @@ export default function Topbar() {
     return path.charAt(0).toUpperCase() + path.slice(1);
   };
 
-  // ─── 🛡️ CENTRALIZED DATA FETCHING (Bugs 1, 2, 3 & 6 Fixed) ───
+  // ─── 🛡️ CENTRALIZED DATA FETCHING ───
   useEffect(() => {
     let isMounted = true;
 
     const fetchRealData = async () => {
-      if (!user?.id) return; // CRITICAL: Null check
+      if (!user?.id) return;
       
       try {
-        // 🔥 Central XP Engine: No more double counting! Just ask the DB for the final truth.
         const { data: pData, error } = await supabase
           .from('profiles')
           .select('*')
@@ -67,6 +68,32 @@ export default function Topbar() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  // 🚀 NEW: Fallback function to generate and save FCM Token
+  const handleEnablePush = async () => {
+    setIsRequestingPush(true);
+    try {
+      const token = await generateFCMToken();
+      if (token) {
+        const { error } = await supabase
+          .from('profiles')
+          .update({ push_subscription: token })
+          .eq('id', user.id);
+
+        if (error) throw error;
+
+        setProfile(prev => ({ ...prev, push_subscription: token }));
+        showToast("Smart Assistant Alerts enabled! 🔔", "success");
+      } else {
+        showToast("Notifications blocked. Please enable them in browser settings.", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to setup notifications.", "error");
+    } finally {
+      setIsRequestingPush(false);
+    }
+  };
+
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!user?.id) return;
@@ -82,7 +109,6 @@ export default function Topbar() {
 
       if (profileError) throw profileError;
       
-      // Update auth metadata for the name so it reflects everywhere instantly
       await supabase.auth.updateUser({ data: { full_name: formData.name } });
       
       showToast("Dossier updated successfully!");
@@ -143,14 +169,11 @@ export default function Topbar() {
 
           <div className="w-px h-6 bg-white/10 hidden md:block"></div>
 
-          {/* 🪙 NEW DUAL ECONOMY WALLET */}
           <div className="hidden sm:flex items-center gap-3 bg-[#0d0d14] border border-white/10 px-4 py-2 rounded-2xl shadow-sm">
-            {/* Spendable Credits */}
             <div className="flex items-center gap-2 border-r border-white/10 pr-3" title="Spendable Credits">
               <span className="text-[14px]">🪙</span>
               <span className="text-[13px] font-bold text-slate-200">Credits: {profile?.credits_balance || 0}</span>
             </div>
-            {/* Rank & Pilot Score */}
             <div className="flex items-center gap-2 pl-1" title="Global Rank & Score">
               <span className="text-indigo-400 text-[14px]">🎖️</span>
               <span className="text-[13px] font-bold text-slate-200">Rank: {profile?.rank_title || 'Cadet'}</span>
@@ -158,10 +181,8 @@ export default function Topbar() {
             </div>
           </div>
 
-          {/* 🔥 THE REAL NOTIFICATION ENGINE (Replaces old code) */}
           <NotificationBell userId={user?.id} />
 
-          {/* DYNAMIC AVATAR */}
           <div className="relative">
             <div onClick={() => setIsDropdownOpen(!isDropdownOpen)} title="Settings" className="cursor-pointer hover:scale-105 transition-transform">
               {renderAvatar()}
@@ -184,7 +205,6 @@ export default function Topbar() {
         </div>
       </div>
 
-      {/* ─── UPGRADED SETTINGS MODAL ─── */}
       <Modal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} title="Pilot Dossier">
         <form onSubmit={handleSaveProfile} className="flex flex-col gap-5">
           
@@ -224,6 +244,29 @@ export default function Topbar() {
             >
               <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${formData.isPublic ? 'translate-x-6' : 'translate-x-1'}`} />
             </button>
+          </div>
+
+          {/* 🚀 NEW: Smart Assistant Toggle Section */}
+          <div className="pt-2 pb-2 flex items-center justify-between border-t border-white/5">
+            <div>
+              <label className="block text-[13px] font-bold text-slate-200 mb-0.5">Smart Assistant Alerts</label>
+              <p className="text-[11px] text-white/40">Get notified when your streak is at risk.</p>
+            </div>
+            
+            {profile?.push_subscription ? (
+              <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/30 flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div> Active
+              </span>
+            ) : (
+              <button 
+                type="button" 
+                onClick={handleEnablePush}
+                disabled={isRequestingPush}
+                className="px-4 py-1.5 bg-indigo-500/10 text-indigo-400 font-bold text-[11px] rounded-lg border border-indigo-500/30 hover:bg-indigo-500/20 transition-colors disabled:opacity-50"
+              >
+                {isRequestingPush ? "Connecting..." : "Enable Alerts"}
+              </button>
+            )}
           </div>
 
           <button type="submit" disabled={loading} className="w-full mt-2 bg-gradient-to-br from-indigo-500 to-purple-500 text-white font-bold text-[14px] py-3.5 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 shadow-lg shadow-indigo-500/20">
